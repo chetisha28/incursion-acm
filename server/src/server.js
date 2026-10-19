@@ -1,33 +1,19 @@
-require("dotenv").config();
-const express = require("express");
-const pool = require("./db");
-const app = express();
-const PORT = process.env.PORT;
+import { app } from './app.js';
+import { env } from './config/env.js';
+import { prisma } from './config/prisma.js';
 
-app.use(express.json());
-
-app.get("/", (req, res) => {
-    res.json({
-        message: "Backend is running!"
-    });
+const server = app.listen(env.PORT, () => {
+  console.log(JSON.stringify({ level: 'info', message: 'ACM backend listening', port: env.PORT, environment: env.NODE_ENV }));
 });
 
-app.get("/test-db", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT NOW()");
-        res.json({
-            message: "Database connected!",
-            time: result.rows[0]
-        });
-    } catch (error) {
-        console.error(error);
+async function shutdown(signal) {
+  console.log(JSON.stringify({ level: 'info', message: 'Shutting down', signal }));
+  server.close(async () => {
+    await prisma.$disconnect();
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 10000).unref();
+}
 
-        res.status(500).json({
-            message: "Database connection failed"
-        });
-    }
-});
-
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-});
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
