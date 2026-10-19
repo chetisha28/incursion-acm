@@ -269,4 +269,117 @@ describe('financial records', () => {
     expect(response.status).toBe(201);
     expect(response.body.data.amount).toBe('1250.50');
   });
+
+  test('supports keyword search on description and category', async () => {
+    state.expenses.push(
+      { id: 'exp-1', amount: '500.00', category: 'Food', description: 'Sandwiches for workshop', archivedAt: null, transactionDate: new Date('2030-01-01') },
+      { id: 'exp-2', amount: '1500.00', category: 'Cloud', description: 'Compute GPU cluster credits', archivedAt: null, transactionDate: new Date('2030-01-02') }
+    );
+    const auth = await token('core', 'core@example.test');
+    const response = await request(app).get('/api/expenses?search=Compute').set('Authorization', `Bearer ${auth}`);
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].id).toBe('exp-2');
+  });
 });
+
+describe('event resolution and lifecycle workflow', () => {
+  const sampleDraft = () => ({
+    id: 'draft-evt-1',
+    title: 'Proposed Robotics Seminar',
+    description: 'Autonomous systems talk',
+    category: 'Tech Talk',
+    startsAt: new Date('2030-03-01T14:00:00Z'),
+    endsAt: new Date('2030-03-01T16:00:00Z'),
+    timezone: 'UTC',
+    venue: 'Hall 401',
+    expectedAudience: 'Engineers',
+    organizer: 'Robotics Club',
+    campusRelevant: false,
+    status: 'DRAFT',
+    createdById: 'exec-1',
+    archivedAt: null
+  });
+
+  test('Core can resolve a draft event into published with resolution notes', async () => {
+    state.events.push(sampleDraft());
+    const auth = await token('core', 'core@example.test');
+    const response = await request(app)
+      .post('/api/events/draft-evt-1/resolve')
+      .set('Authorization', `Bearer ${auth}`)
+      .send({
+        status: 'PUBLISHED',
+        resolutionNotes: 'Approved by Core committee after timeslot verification.'
+      });
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.status).toBe('PUBLISHED');
+    expect(response.body.data.resolutionNotes).toBe('Approved by Core committee after timeslot verification.');
+    expect(response.body.data.resolvedAt).toBeTruthy();
+  });
+
+  test('executives cannot resolve events', async () => {
+    state.events.push(sampleDraft());
+    const auth = await token('executive', 'exec@example.test');
+    const response = await request(app)
+      .post('/api/events/draft-evt-1/resolve')
+      .set('Authorization', `Bearer ${auth}`)
+      .send({ status: 'PUBLISHED' });
+    expect(response.status).toBe(403);
+  });
+
+  test('Core can read draft events by ID while public visitors cannot', async () => {
+    state.events.push(sampleDraft());
+    const publicRes = await request(app).get('/api/events/draft-evt-1');
+    expect(publicRes.status).toBe(404);
+
+    const auth = await token('core', 'core@example.test');
+    const coreRes = await request(app).get('/api/events/draft-evt-1').set('Authorization', `Bearer ${auth}`);
+    expect(coreRes.status).toBe(200);
+    expect(coreRes.body.data.id).toBe('draft-evt-1');
+  });
+
+  test('Core can list draft events with status filter', async () => {
+    state.events.push(
+      sampleDraft(),
+      { id: 'pub-evt-2', title: 'Live Hackathon', category: 'Hackathon', startsAt: new Date('2030-03-02T10:00:00Z'), endsAt: new Date('2030-03-02T18:00:00Z'), timezone: 'UTC', venue: 'Auditorium', expectedAudience: 'All', organizer: 'ACM', campusRelevant: true, status: 'PUBLISHED', createdById: 'core-1', archivedAt: null }
+    );
+
+    const auth = await token('core', 'core@example.test');
+    const draftsRes = await request(app).get('/api/events?status=DRAFT').set('Authorization', `Bearer ${auth}`);
+    expect(draftsRes.status).toBe(200);
+    expect(draftsRes.body.data.map((e) => e.id)).toEqual(['draft-evt-1']);
+
+    const allRes = await request(app).get('/api/events?status=ALL').set('Authorization', `Bearer ${auth}`);
+    expect(allRes.status).toBe(200);
+    expect(allRes.body.data.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('rejects event resolution with scheduling conflict unless allowConflict is true', async () => {
+    state.events.push(
+      { id: 'existing-event', title: 'Main Hall Event', category: 'Workshop', startsAt: new Date('2030-04-01T10:00:00Z'), endsAt: new Date('2030-04-01T14:00:00Z'), timezone: 'UTC', venue: 'Main Hall', expectedAudience: 'All students', organizer: 'ACM', campusRelevant: true, status: 'PUBLISHED', createdById: 'core-1', archivedAt: null },
+      { id: 'draft-conflict', title: 'Concurrent Expo', category: 'Exhibition', startsAt: new Date('2030-04-01T11:00:00Z'), endsAt: new Date('2030-04-01T13:00:00Z'), timezone: 'UTC', venue: 'Main Hall', expectedAudience: 'All students', organizer: 'Partner', campusRelevant: true, status: 'DRAFT', createdById: 'exec-1', archivedAt: null }
+    );
+    const auth = await token('core', 'core@example.test');
+
+    const blocked = await request(app)
+      .post('/api/events/draft-conflict/resolve')
+      .set('Authorization', `Bearer ${auth}`)
+      .send({ status: 'PUBLISHED', resolutionNotes: 'Attempting publish without override' });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe('SCHEDULING_CONFLICT');
+
+    const resolved = await request(app)
+      .post('/api/events/draft-conflict/resolve')
+      .set('Authorization', `Bearer ${auth}`)
+      .send({
+        status: 'PUBLISHED',
+        allowConflict: true,
+        resolutionNotes: 'Approved: Main Hall will be partitioned into North and South wings.'
+      });
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.data.status).toBe('PUBLISHED');
+    expect(resolved.body.data.resolutionNotes).toContain('partitioned');
+  });
+});
+

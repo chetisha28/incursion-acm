@@ -22,7 +22,9 @@ import {
   Plus,
   RefreshCw,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
+  Trash2,
   UsersRound,
   Wallet
 } from 'lucide-react';
@@ -37,6 +39,8 @@ import { ConflictCenter } from './ConflictCenter';
 import { AnalyticsReports } from './AnalyticsReports';
 import { ActivityFeed } from './ActivityFeed';
 import { EventForm } from '@/components/events/EventForm';
+import { EventResolveModal } from '@/components/events/EventResolveModal';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { ExpenseTable } from '@/components/expenses/ExpenseTable';
 import { ExpenseForm } from '@/components/expenses/ExpenseForm';
 import { BudgetModal } from '@/components/budgets/BudgetModal';
@@ -60,10 +64,22 @@ function DashboardContent() {
   const [expenses, setExpenses] = useState([]);
   const [eventsList, setEventsList] = useState([]);
   const [expensesLoading, setExpensesLoading] = useState(false);
+  const [agendaFilter, setAgendaFilter] = useState('ALL');
 
   // Modal States
   const [createEventOpen, setCreateEventOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
+  const [resolvingItem, setResolvingItem] = useState(null);
+  const [resolveModalOpen, setResolveModalOpen] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({
+    open: false,
+    title: '',
+    message: '',
+    confirmLabel: 'Confirm',
+    confirmTone: 'danger',
+    confirming: false,
+    onConfirm: null
+  });
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [budgetModalOpen, setBudgetModalOpen] = useState(false);
@@ -89,7 +105,7 @@ function DashboardContent() {
     try {
       const [expRes, evRes] = await Promise.all([
         api.listExpenses({ limit: 50 }, token, { signal }),
-        api.listEvents({ limit: 100 }, { signal })
+        api.listEvents({ limit: 100, status: 'ALL' }, token, { signal })
       ]);
       setExpenses(expRes.data || []);
       setEventsList(evRes.data || []);
@@ -137,12 +153,48 @@ function DashboardContent() {
 
   const handleEditEventFromConflict = async (conflictEventRef) => {
     try {
-      const res = await api.event(conflictEventRef.id || conflictEventRef.eventId);
+      const res = await api.event(conflictEventRef.id || conflictEventRef.eventId, token);
       setEditingEvent(res.data);
       setCreateEventOpen(true);
     } catch (err) {
       toast('Could not load event for rescheduling: ' + err.message, 'error');
     }
+  };
+
+  const handleOpenResolve = (eventOrConflict) => {
+    setResolvingItem(eventOrConflict);
+    setResolveModalOpen(true);
+  };
+
+  const handleResolveEvent = async (id, payload) => {
+    await api.resolveEvent(id, payload, token);
+    toast(`Event successfully resolved (Status: ${payload.status || 'PUBLISHED'}).`);
+    setResolveModalOpen(false);
+    setResolvingItem(null);
+    refreshAll();
+  };
+
+  const handleArchiveEvent = (event) => {
+    setConfirmModal({
+      open: true,
+      title: `Archive “${event.title}”?`,
+      message: `The event will be marked CANCELLED and removed from public calendar listings. Linked financial history and audit logs will be permanently preserved.`,
+      confirmLabel: 'Archive Event',
+      confirmTone: 'danger',
+      confirming: false,
+      onConfirm: async () => {
+        setConfirmModal((curr) => ({ ...curr, confirming: true }));
+        try {
+          await api.archiveEvent(event.id, token);
+          toast(`Event “${event.title}” archived.`);
+          setConfirmModal((curr) => ({ ...curr, open: false, confirming: false }));
+          refreshAll();
+        } catch (err) {
+          toast(err.message || 'Failed to archive event', 'error');
+          setConfirmModal((curr) => ({ ...curr, confirming: false }));
+        }
+      }
+    });
   };
 
   // Expense Handlers
@@ -169,15 +221,27 @@ function DashboardContent() {
     refreshAll();
   };
 
-  const handleArchiveExpense = async (expense) => {
-    if (!window.confirm(`Archive expense of ${formatINR(expense.amount)} for "${expense.description}"?`)) return;
-    try {
-      await api.archiveExpense(expense.id, token);
-      toast('Expense record archived.');
-      refreshAll();
-    } catch (err) {
-      toast(err.message || 'Failed to archive expense', 'error');
-    }
+  const handleArchiveExpense = (expense) => {
+    setConfirmModal({
+      open: true,
+      title: `Archive Expense Record?`,
+      message: `Archive expense of ${formatINR(expense.amount)} for “${expense.description}”? The accounting entry will be archived while preserving historical balance audits.`,
+      confirmLabel: 'Archive Expense',
+      confirmTone: 'danger',
+      confirming: false,
+      onConfirm: async () => {
+        setConfirmModal((curr) => ({ ...curr, confirming: true }));
+        try {
+          await api.archiveExpense(expense.id, token);
+          toast('Expense record archived.');
+          setConfirmModal((curr) => ({ ...curr, open: false, confirming: false }));
+          refreshAll();
+        } catch (err) {
+          toast(err.message || 'Failed to archive expense', 'error');
+          setConfirmModal((curr) => ({ ...curr, confirming: false }));
+        }
+      }
+    });
   };
 
   // Budget Handlers
@@ -196,14 +260,23 @@ function DashboardContent() {
   const conflictCount = dashboard?.detectedConflicts?.length || 0;
   const primaryConflict = dashboard?.detectedConflicts?.[0] || null;
 
-  // Upcoming scheduled events list sorted chronologically
-  const upcomingAgenda = useMemo(() => {
+  // Upcoming scheduled events list sorted chronologically with status filtering
+  const filteredAgenda = useMemo(() => {
     if (!eventsList.length) return [];
-    return [...eventsList]
-      .filter((ev) => ev.status !== 'CANCELLED')
-      .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt))
-      .slice(0, 6);
-  }, [eventsList]);
+    let list = [...eventsList];
+    if (agendaFilter === 'DRAFT') {
+      list = list.filter((ev) => ev.status === 'DRAFT');
+    } else if (agendaFilter === 'PUBLISHED') {
+      list = list.filter((ev) => ev.status === 'PUBLISHED');
+    } else if (agendaFilter === 'CANCELLED') {
+      list = list.filter((ev) => ev.status === 'CANCELLED');
+    }
+    return list.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+  }, [eventsList, agendaFilter]);
+
+  const draftCount = useMemo(() => eventsList.filter((e) => e.status === 'DRAFT').length, [eventsList]);
+  const pubCount = useMemo(() => eventsList.filter((e) => e.status === 'PUBLISHED').length, [eventsList]);
+  const cancCount = useMemo(() => eventsList.filter((e) => e.status === 'CANCELLED').length, [eventsList]);
 
   // Financial calculations
   const totalBudget = Number(dashboard?.currentBudget?.totalAmount) || 0;
@@ -495,6 +568,38 @@ function DashboardContent() {
                     </div>
                   </div>
 
+                  {/* Agenda Status Filters */}
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className={`calendar-cat-btn ${agendaFilter === 'ALL' ? 'calendar-cat-btn-active' : ''}`}
+                      onClick={() => setAgendaFilter('ALL')}
+                    >
+                      ALL ({eventsList.length})
+                    </button>
+                    <button
+                      type="button"
+                      className={`calendar-cat-btn ${agendaFilter === 'DRAFT' ? 'calendar-cat-btn-active' : ''}`}
+                      onClick={() => setAgendaFilter('DRAFT')}
+                    >
+                      IN REVIEW / DRAFTS ({draftCount})
+                    </button>
+                    <button
+                      type="button"
+                      className={`calendar-cat-btn ${agendaFilter === 'PUBLISHED' ? 'calendar-cat-btn-active' : ''}`}
+                      onClick={() => setAgendaFilter('PUBLISHED')}
+                    >
+                      ACTIVE / PUBLISHED ({pubCount})
+                    </button>
+                    <button
+                      type="button"
+                      className={`calendar-cat-btn ${agendaFilter === 'CANCELLED' ? 'calendar-cat-btn-active' : ''}`}
+                      onClick={() => setAgendaFilter('CANCELLED')}
+                    >
+                      CANCELLED ({cancCount})
+                    </button>
+                  </div>
+
                   <div className="ops-agenda-table-wrap">
                     <table className="ops-agenda-table">
                       <thead>
@@ -503,22 +608,26 @@ function DashboardContent() {
                           <th style={{ width: '130px' }}>Timeslot</th>
                           <th>Event Title & Organizer</th>
                           <th>Venue</th>
-                          <th style={{ width: '90px' }}>Status</th>
-                          <th style={{ width: '70px', textAlign: 'right' }}>Action</th>
+                          <th style={{ width: '100px' }}>Status</th>
+                          <th style={{ width: '120px', textAlign: 'right' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {upcomingAgenda.length === 0 ? (
+                        {filteredAgenda.length === 0 ? (
                           <tr>
                             <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
-                              No upcoming events on the operational schedule. Use “Schedule Event” above to log a new date.
+                              No events found in this view. Use “Schedule Event” above to log a new date.
                             </td>
                           </tr>
                         ) : (
-                          upcomingAgenda.map((event) => {
+                          filteredAgenda.map((event) => {
                             const isColliding = dashboard.detectedConflicts?.some(
                               (c) => c.eventId === event.id || c.conflictingEventId === event.id
                             );
+                            const matchingConflict = dashboard.detectedConflicts?.find(
+                              (c) => c.eventId === event.id || c.conflictingEventId === event.id
+                            );
+
                             return (
                               <tr key={event.id} className={isColliding ? 'ops-row-collision' : ''}>
                                 <td className="tnum" style={{ fontWeight: 600 }}>
@@ -534,6 +643,11 @@ function DashboardContent() {
                                     </strong>
                                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                       {event.category} · Hosted by {event.organizer}
+                                      {event.resolutionNotes && (
+                                        <span style={{ display: 'block', color: 'var(--primary)', fontStyle: 'italic', marginTop: '2px' }}>
+                                          Note: {event.resolutionNotes}
+                                        </span>
+                                      )}
                                     </span>
                                   </div>
                                 </td>
@@ -548,21 +662,51 @@ function DashboardContent() {
                                     <span className="badge badge-danger">
                                       <AlertTriangle size={10} /> CLASH
                                     </span>
+                                  ) : event.status === 'DRAFT' ? (
+                                    <span className="badge badge-warning">
+                                      IN REVIEW
+                                    </span>
+                                  ) : event.status === 'CANCELLED' ? (
+                                    <span className="badge badge-danger">
+                                      CANCELLED
+                                    </span>
                                   ) : (
-                                    <span className={`badge ${event.status === 'PUBLISHED' ? 'badge-primary' : 'badge-default'}`}>
-                                      {event.status}
+                                    <span className="badge badge-primary">
+                                      PUBLISHED
                                     </span>
                                   )}
                                 </td>
                                 <td style={{ textAlign: 'right' }}>
-                                  <button
-                                    type="button"
-                                    className="icon-button icon-button-ghost"
-                                    onClick={() => { setEditingEvent(event); setCreateEventOpen(true); }}
-                                    title="Edit event details"
-                                  >
-                                    <Pencil size={13} />
-                                  </button>
+                                  <div style={{ display: 'inline-flex', gap: '4px', alignItems: 'center' }}>
+                                    {(event.status === 'DRAFT' || isColliding) && (
+                                      <button
+                                        type="button"
+                                        className="button button-compact button-outline"
+                                        style={{ height: '26px', fontSize: '10px', padding: '0 6px', gap: '3px' }}
+                                        onClick={() => handleOpenResolve(matchingConflict || event)}
+                                        title={event.status === 'DRAFT' ? 'Review and resolve draft submission' : 'Resolve scheduling concurrency'}
+                                      >
+                                        <ShieldCheck size={11} /> Resolve
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="icon-button icon-button-ghost"
+                                      onClick={() => { setEditingEvent(event); setCreateEventOpen(true); }}
+                                      title="Edit event details"
+                                    >
+                                      <Pencil size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="icon-button icon-button-ghost"
+                                      style={{ color: 'var(--danger)' }}
+                                      onClick={() => handleArchiveEvent(event)}
+                                      title="Archive event"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -709,6 +853,7 @@ function DashboardContent() {
               conflicts={dashboard.detectedConflicts || []}
               role="CORE"
               onEditEvent={handleEditEventFromConflict}
+              onResolveConflict={handleOpenResolve}
             />
           </section>
         )}
@@ -856,6 +1001,14 @@ function DashboardContent() {
         onSave={handleSaveEvent}
       />
 
+      <EventResolveModal
+        open={resolveModalOpen}
+        event={resolvingItem?.title && !resolvingItem?.conflictingEventId ? resolvingItem : null}
+        conflict={resolvingItem?.conflictingEventId ? resolvingItem : null}
+        onClose={() => { setResolveModalOpen(false); setResolvingItem(null); }}
+        onResolve={handleResolveEvent}
+      />
+
       <ExpenseForm
         open={expenseModalOpen}
         expense={editingExpense}
@@ -869,6 +1022,17 @@ function DashboardContent() {
         budget={dashboard?.currentBudget}
         onClose={() => setBudgetModalOpen(false)}
         onSave={handleSaveBudget}
+      />
+
+      <ConfirmModal
+        open={confirmModal.open}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel={confirmModal.confirmLabel}
+        confirmTone={confirmModal.confirmTone}
+        confirming={confirmModal.confirming}
+        onClose={() => setConfirmModal((curr) => ({ ...curr, open: false }))}
+        onConfirm={confirmModal.onConfirm}
       />
     </main>
   );

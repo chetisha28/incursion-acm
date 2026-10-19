@@ -31,3 +31,31 @@ export async function authenticate(req, _res, next) {
     return next(error);
   }
 }
+
+export async function optionalAuthenticate(req, _res, next) {
+  try {
+    const header = req.get('authorization') || '';
+    const [scheme, token] = header.split(' ');
+    if (scheme !== 'Bearer' || !token) return next();
+    let claims;
+    try {
+      claims = jwt.verify(token, env.JWT_SECRET, { issuer: env.JWT_ISSUER, audience: env.JWT_AUDIENCE });
+    } catch {
+      return next();
+    }
+    if (typeof claims !== 'object' || !claims.sub || !claims.jti) return next();
+    const session = await prisma.authSession.findUnique({
+      where: { jti: claims.jti },
+      include: { user: { select: { id: true, email: true, name: true, role: true, isActive: true } } }
+    });
+    if (!session || session.userId !== claims.sub || session.revokedAt || session.expiresAt <= new Date() || !session.user.isActive) {
+      return next();
+    }
+    req.auth = { jti: session.jti, sessionId: session.id };
+    req.user = { id: session.user.id, email: session.user.email, name: session.user.name, role: session.user.role };
+    return next();
+  } catch {
+    return next();
+  }
+}
+

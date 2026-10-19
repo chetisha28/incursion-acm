@@ -12,6 +12,7 @@ import { EventFilters } from './EventFilters';
 import { EventForm } from './EventForm';
 import { EventDetails } from './EventDetails';
 import { EventCalendar } from '@/components/calendar/EventCalendar';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -21,10 +22,18 @@ export function EventSection({ activeTab, onTabChange }) {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [confirmModal, setConfirmModal] = useState({
+    open: false,
+    title: '',
+    message: '',
+    confirming: false,
+    onConfirm: null
+  });
+
   const { user, role, token } = useAuth();
   const toast = useToast();
   const mode = activeTab === 'past' ? 'past' : 'list';
-  const events = useEvents(mode, filters);
+  const events = useEvents(mode, filters, token);
   const categories = useMemo(() => [...new Set(events.items.map((event) => event.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [events.items]);
   const changeFilters = useCallback((change) => setFilters((current) => ({ ...current, ...change })), []);
 
@@ -40,14 +49,26 @@ export function EventSection({ activeTab, onTabChange }) {
     toast(role === 'EXECUTIVE' && !editing ? 'Your event was submitted as a draft for Core review.' : 'Event saved to the ACM calendar.');
   };
 
-  const archive = async (event) => {
-    if (!window.confirm(`Archive “${event.title}”? The event will be marked cancelled and removed from public views.`)) return;
-    try {
-      await api.archiveEvent(event.id, token);
-      toast('Event archived and marked cancelled.');
-      setSelected(null);
-      events.refresh();
-    } catch (error) { toast(error.message, 'error'); }
+  const archive = (event) => {
+    setConfirmModal({
+      open: true,
+      title: `Archive “${event.title}”?`,
+      message: `The event will be marked cancelled and removed from the active calendar. Chapter archives and linked expense records will be preserved.`,
+      confirming: false,
+      onConfirm: async () => {
+        setConfirmModal((curr) => ({ ...curr, confirming: true }));
+        try {
+          await api.archiveEvent(event.id, token);
+          toast('Event archived and marked cancelled.');
+          setSelected(null);
+          events.refresh();
+          setConfirmModal((curr) => ({ ...curr, open: false, confirming: false }));
+        } catch (error) {
+          toast(error.message, 'error');
+          setConfirmModal((curr) => ({ ...curr, confirming: false }));
+        }
+      }
+    });
   };
 
   return (
@@ -78,6 +99,16 @@ export function EventSection({ activeTab, onTabChange }) {
       </div>
       <EventDetails event={selected} onClose={() => setSelected(null)} />
       <EventForm open={formOpen} event={editing} role={role} onClose={closeForm} onSave={saveEvent} />
+      <ConfirmModal
+        open={confirmModal.open}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel="Archive Event"
+        confirmTone="danger"
+        confirming={confirmModal.confirming}
+        onClose={() => setConfirmModal((curr) => ({ ...curr, open: false }))}
+        onConfirm={confirmModal.onConfirm}
+      />
       {user && <span className="visually-hidden" aria-live="polite">Signed in as {user.name}</span>}
     </section>
   );

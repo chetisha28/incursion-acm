@@ -34,11 +34,24 @@ async function dashboardConflicts() {
       conflicts.push({
         eventId: events[i].id,
         title: events[i].title,
+        startsAt: events[i].startsAt,
+        endsAt: events[i].endsAt,
+        venue: events[i].venue,
+        status: events[i].status,
+        category: events[i].category,
+        organizer: events[i].organizer,
+        expectedAudience: events[i].expectedAudience,
+        campusRelevant: events[i].campusRelevant,
         conflictingEventId: conflict.eventId,
         conflictingTitle: conflict.title,
-        startsAt: conflict.startsAt,
-        endsAt: conflict.endsAt,
-        venue: conflict.venue,
+        conflictingStartsAt: conflict.startsAt,
+        conflictingEndsAt: conflict.endsAt,
+        conflictingVenue: conflict.venue,
+        conflictingStatus: events[j].status,
+        conflictingCategory: events[j].category,
+        conflictingOrganizer: events[j].organizer,
+        conflictingExpectedAudience: events[j].expectedAudience,
+        conflictingCampusRelevant: events[j].campusRelevant,
         reasons: conflict.reasons
       });
     }

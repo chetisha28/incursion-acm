@@ -17,7 +17,7 @@ app.use((req, res, next) => {
 app.use(helmet());
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || env.CORS_ORIGINS.includes(origin) || origin.endsWith('.vercel.app')) return callback(null, true);
+    if (!origin || env.CORS_ORIGINS.includes(origin) || origin.endsWith('.vercel.app') || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return callback(null, true);
     return callback(null, false);
   },
   credentials: false,

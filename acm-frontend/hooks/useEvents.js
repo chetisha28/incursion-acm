@@ -3,14 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 
-export function useEvents(mode = 'list', filters = {}) {
+export function useEvents(mode = 'list', filters = {}, token = null) {
   const [items, setItems] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 0 });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const queryKey = `${mode}|${filters.category || ''}|${filters.search || ''}`;
+  const queryKey = `${mode}|${filters.category || ''}|${filters.search || ''}|${filters.status || ''}|${token || ''}`;
   const currentKey = useRef(queryKey);
 
   useEffect(() => {
@@ -37,8 +37,10 @@ export function useEvents(mode = 'list', filters = {}) {
           order: 'asc',
           from: now.toISOString(),
           category: filters.category,
-          search: filters.search
-        }, { signal: controller.signal });
+          search: filters.search,
+          ...(filters.status ? { status: filters.status } : {})
+        }, token, { signal: controller.signal });
+
     request.then((response) => {
       const results = response.data || [];
       setItems((previous) => mode === 'list' && requestedPage > 1 && !queryChanged ? [...previous, ...results] : results);
@@ -49,7 +51,7 @@ export function useEvents(mode = 'list', filters = {}) {
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [mode, filters.category, filters.search, queryKey, page, reloadKey]);
+  }, [mode, filters.category, filters.search, filters.status, token, queryKey, page, reloadKey]);
 
   const loadMore = useCallback(() => {
     if (!loading && page < pagination.totalPages) setPage((current) => current + 1);

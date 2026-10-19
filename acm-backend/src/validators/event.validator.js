@@ -16,6 +16,7 @@ const eventFields = {
   organizer: z.string().trim().min(1).max(160),
   campusRelevant: z.boolean().default(false),
   status: z.enum(['DRAFT', 'PUBLISHED', 'CANCELLED']).default('DRAFT'),
+  resolutionNotes: z.string().trim().max(2000).optional(),
   allowConflict: z.boolean().optional()
 };
 
@@ -30,11 +31,24 @@ export const eventPatchSchema = z.object(eventFields).partial().strict().superRe
   }
 });
 
+export const eventResolveSchema = z.object({
+  status: z.enum(['DRAFT', 'PUBLISHED', 'CANCELLED']).default('PUBLISHED'),
+  resolutionNotes: z.string().trim().max(2000).optional(),
+  allowConflict: z.boolean().optional(),
+  venue: z.string().trim().min(1).max(200).optional(),
+  startsAt: isoDate.optional(),
+  endsAt: isoDate.optional()
+}).strict().superRefine((data, ctx) => {
+  if (data.startsAt && data.endsAt && data.endsAt <= data.startsAt) {
+    ctx.addIssue({ code: 'custom', path: ['endsAt'], message: 'End date and time must be later than start date and time' });
+  }
+});
+
 export const eventListQuerySchema = z.object({
   category: z.string().trim().min(1).optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
-  status: z.enum(['PUBLISHED']).optional(),
+  status: z.enum(['DRAFT', 'PUBLISHED', 'CANCELLED', 'ALL']).optional(),
   search: z.string().trim().max(100).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
@@ -43,3 +57,4 @@ export const eventListQuerySchema = z.object({
 }).strict().superRefine((query, ctx) => {
   if (query.from && query.to && query.to <= query.from) ctx.addIssue({ code: 'custom', path: ['to'], message: 'to must be later than from' });
 });
+

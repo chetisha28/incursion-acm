@@ -13,6 +13,12 @@ export const listExpenses = asyncHandler(async (req, res) => {
     archivedAt: null,
     ...(query.category ? { category: { equals: query.category, mode: 'insensitive' } } : {}),
     ...(query.eventId ? { eventId: query.eventId } : {}),
+    ...(query.search ? {
+      OR: [
+        { description: { contains: query.search, mode: 'insensitive' } },
+        { category: { contains: query.search, mode: 'insensitive' } }
+      ]
+    } : {}),
     ...(query.from || query.to ? { transactionDate: { ...(query.from ? { gte: query.from } : {}), ...(query.to ? { lte: query.to } : {}) } } : {})
   };
   const [items, total] = await Promise.all([

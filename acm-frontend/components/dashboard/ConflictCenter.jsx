@@ -1,9 +1,9 @@
 'use client';
 
-import { AlertTriangle, ArrowRightLeft, CalendarClock, CheckCircle2, MapPin } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, CalendarClock, CheckCircle2, MapPin, Pencil, ShieldCheck } from 'lucide-react';
 import { formatDate, formatRange } from '@/lib/dates';
 
-export function ConflictCenter({ conflicts = [], role, onEditEvent }) {
+export function ConflictCenter({ conflicts = [], role, onEditEvent, onResolveConflict }) {
   if (!conflicts.length) {
     return (
       <div className="state-panel state-empty" style={{ borderLeft: '3px solid var(--success)' }}>
@@ -43,118 +43,138 @@ export function ConflictCenter({ conflicts = [], role, onEditEvent }) {
 
       {/* Conflicts Comparison Cards */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-        {conflicts.map((conflict, index) => (
-          <div
-            key={`${conflict.eventId}-${conflict.conflictingEventId}-${index}`}
-            style={{
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              borderLeft: '3px solid var(--danger)',
-              padding: '18px 20px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '16px'
-            }}
-          >
-            {/* Header / Badges */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span className="badge badge-danger">
-                  <AlertTriangle size={11} /> COLLISION DETECTED
-                </span>
-                <span className="micro-label">CASE REF #{index + 1}</span>
-              </div>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                {(conflict.reasons || []).map((reason, rIdx) => (
-                  <span key={rIdx} className="badge badge-warning">
-                    {reason}
-                  </span>
-                ))}
-              </div>
-            </div>
+        {conflicts.map((conflict, index) => {
+          const bStarts = conflict.conflictingStartsAt || conflict.startsAt;
+          const bEnds = conflict.conflictingEndsAt || conflict.endsAt;
+          const bVenue = conflict.conflictingVenue || conflict.venue;
 
-            {/* Side-by-Side Comparison */}
+          return (
             <div
+              key={`${conflict.eventId}-${conflict.conflictingEventId}-${index}`}
               style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr auto 1fr',
-                gap: '16px',
-                alignItems: 'center',
-                background: 'var(--bg-subtle)',
-                padding: '14px 16px',
-                border: '1px solid var(--border-subtle)'
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                borderLeft: '3px solid var(--danger)',
+                padding: '18px 20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px'
               }}
             >
-              {/* Event A */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span className="micro-label" style={{ color: 'var(--primary)' }}>EVENT A (PROPOSED)</span>
-                <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
-                  {conflict.title}
-                </strong>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}>
-                  <CalendarClock size={12} style={{ color: 'var(--primary)' }} />
-                  <span className="tnum">{formatDate(conflict.startsAt)} · {formatRange(conflict.startsAt, conflict.endsAt)}</span>
+              {/* Header / Badges */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="badge badge-danger">
+                    <AlertTriangle size={11} /> COLLISION DETECTED
+                  </span>
+                  <span className="micro-label">CASE REF #{index + 1}</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-                  <MapPin size={12} />
-                  <span>{conflict.venue}</span>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {(conflict.reasons || []).map((reason, rIdx) => (
+                    <span key={rIdx} className="badge badge-warning">
+                      {reason}
+                    </span>
+                  ))}
                 </div>
               </div>
 
-              {/* Intersect Icon */}
+              {/* Side-by-Side Comparison */}
               <div
                 style={{
-                  width: '32px',
-                  height: '32px',
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border-subtle)',
-                  display: 'flex',
+                  display: 'grid',
+                  gridTemplateColumns: '1fr auto 1fr',
+                  gap: '16px',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'var(--danger)'
+                  background: 'var(--bg-subtle)',
+                  padding: '14px 16px',
+                  border: '1px solid var(--border-subtle)'
                 }}
               >
-                <ArrowRightLeft size={14} />
+                {/* Event A */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span className="micro-label" style={{ color: 'var(--primary)' }}>EVENT A (PROPOSED)</span>
+                  <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
+                    {conflict.title}
+                  </strong>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    <CalendarClock size={12} style={{ color: 'var(--primary)' }} />
+                    <span className="tnum">{formatDate(conflict.startsAt)} · {formatRange(conflict.startsAt, conflict.endsAt)}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    <MapPin size={12} />
+                    <span>{conflict.venue}</span>
+                  </div>
+                </div>
+
+                {/* Intersect Icon */}
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--danger)'
+                  }}
+                >
+                  <ArrowRightLeft size={14} />
+                </div>
+
+                {/* Event B */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span className="micro-label" style={{ color: 'var(--danger-text)' }}>EVENT B (CONFLICTING)</span>
+                  <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
+                    {conflict.conflictingTitle}
+                  </strong>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                    <CalendarClock size={12} style={{ color: 'var(--danger)' }} />
+                    <span className="tnum">{formatDate(bStarts)} · {formatRange(bStarts, bEnds)}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    <MapPin size={12} />
+                    <span>{bVenue}</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Event B */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span className="micro-label" style={{ color: 'var(--danger-text)' }}>EVENT B (CONFLICTING)</span>
-                <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
-                  {conflict.conflictingTitle}
-                </strong>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)' }}>
-                  <CalendarClock size={12} style={{ color: 'var(--danger)' }} />
-                  <span className="tnum">{formatDate(conflict.startsAt)} · {formatRange(conflict.startsAt, conflict.endsAt)}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
-                  <MapPin size={12} />
-                  <span>{conflict.venue}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Action Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
-              <span className="micro-label">
-                {role === 'CORE'
-                  ? 'CORE DESK: MODIFY TIMESLOT OR VENUE TO RESOLVE CONCURRENCY'
-                  : 'CONTACT CORE DESK TO ADJUST PROPOSED SCHEDULE'}
-              </span>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              {/* Action Bar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)', flexWrap: 'wrap', gap: '10px' }}>
+                <span className="micro-label">
+                  {role === 'CORE'
+                    ? 'CORE DESK: RESOLVE CONCURRENCY OR RESCHEDULE TIMESLOT'
+                    : 'CONTACT CORE DESK TO ADJUST PROPOSED SCHEDULE'}
+                </span>
                 {role === 'CORE' && (
-                  <button
-                    type="button"
-                    className="button button-danger button-compact"
-                    onClick={() => onEditEvent?.({ id: conflict.eventId, title: conflict.title })}
-                  >
-                    Reschedule Event
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="button button-primary button-compact"
+                      onClick={() => onResolveConflict?.(conflict)}
+                    >
+                      <ShieldCheck size={12} /> Resolve Conflict
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-outline button-compact"
+                      onClick={() => onEditEvent?.({ id: conflict.eventId, title: conflict.title })}
+                    >
+                      <Pencil size={11} /> Reschedule A
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-outline button-compact"
+                      onClick={() => onEditEvent?.({ id: conflict.conflictingEventId, title: conflict.conflictingTitle })}
+                    >
+                      <Pencil size={11} /> Reschedule B
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

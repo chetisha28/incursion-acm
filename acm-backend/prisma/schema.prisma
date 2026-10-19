@@ -38,6 +38,7 @@ model User {
   createdEvents   Event[]       @relation("EventCreator")
   createdExpenses Expense[]     @relation("ExpenseCreator")
   createdBudgets  Budget[]      @relation("BudgetCreator")
+  resolvedEvents  Event[]       @relation("EventResolver")
   activityLogs    ActivityLog[]
 
   @@index([role, isActive])
@@ -71,14 +72,19 @@ model Event {
   status            EventStatus @default(DRAFT)
   createdById       String
   archivedAt        DateTime?
+  resolvedAt        DateTime?
+  resolvedById      String?
+  resolutionNotes   String?     @db.Text
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
   createdBy         User        @relation("EventCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  resolver          User?       @relation("EventResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
   expenses          Expense[]
 
   @@index([status, startsAt, endsAt])
   @@index([category, startsAt])
   @@index([createdById])
+  @@index([resolvedById])
 }
 
 model Expense {

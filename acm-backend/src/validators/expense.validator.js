@@ -32,6 +32,7 @@ export const expenseListQuerySchema = z.object({
   from: z.string().datetime({ offset: true }).transform((value) => new Date(value)).optional(),
   to: z.string().datetime({ offset: true }).transform((value) => new Date(value)).optional(),
   eventId: z.string().cuid().optional(),
+  search: z.string().trim().max(100).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20)
 }).strict();
