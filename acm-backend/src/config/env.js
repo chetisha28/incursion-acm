@@ -38,5 +38,5 @@ if (!parsed.success) {
 export const env = {
   ...parsed.data,
   SEED_DEMO: parsed.data.SEED_DEMO.toLowerCase() === 'true',
-  CORS_ORIGINS: parsed.data.CORS_ORIGIN.split(',').map((origin) => origin.trim()).filter(Boolean)
+  CORS_ORIGINS: parsed.data.CORS_ORIGIN.split(',').map((origin) => origin.trim().replace(/\/+$/, '')).filter(Boolean)
 };
