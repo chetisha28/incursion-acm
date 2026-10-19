@@ -21,7 +21,6 @@ try {
   if (env.SEED_DEMO) {
     const configured = [env.DEMO_EXECUTIVE_EMAIL, env.DEMO_EXECUTIVE_PASSWORD, env.DEMO_CORE_EMAIL, env.DEMO_CORE_PASSWORD];
     if (configured.some((value) => !value)) throw new Error('SEED_DEMO=true requires both demo emails and passwords (12+ characters)');
-    if (env.NODE_ENV === 'production') throw new Error('Demo accounts cannot be seeded in production');
     await createIfMissing({ email: env.DEMO_EXECUTIVE_EMAIL.toLowerCase(), password: env.DEMO_EXECUTIVE_PASSWORD, name: 'Demo Executive', role: 'EXECUTIVE' });
     await createIfMissing({ email: env.DEMO_CORE_EMAIL.toLowerCase(), password: env.DEMO_CORE_PASSWORD, name: 'Demo Core Member', role: 'CORE' });
   }

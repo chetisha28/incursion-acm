@@ -24,9 +24,6 @@ const schema = z.object({
   if (Boolean(env.CORE_BOOTSTRAP_EMAIL) !== Boolean(env.CORE_BOOTSTRAP_PASSWORD)) {
     ctx.addIssue({ code: 'custom', message: 'Set both CORE_BOOTSTRAP_EMAIL and CORE_BOOTSTRAP_PASSWORD, or neither' });
   }
-  if (env.NODE_ENV === 'production' && env.SEED_DEMO.toLowerCase() === 'true') {
-    ctx.addIssue({ code: 'custom', message: 'Demo seeding is disabled in production' });
-  }
 });
 
 const parsed = schema.safeParse(process.env);
