@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  VIEWER
+  EXECUTIVE
+  CORE
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum BudgetPeriod {
+  MONTHLY
+  SEMESTER
+}
+
+model User {
+  id              String        @id @default(cuid())
+  email           String        @unique
+  name            String
+  passwordHash    String
+  role            Role
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  sessions        AuthSession[]
+  createdEvents   Event[]       @relation("EventCreator")
+  createdExpenses Expense[]     @relation("ExpenseCreator")
+  createdBudgets  Budget[]      @relation("BudgetCreator")
+  activityLogs    ActivityLog[]
+
+  @@index([role, isActive])
+}
+
+model AuthSession {
+  id        String    @id @default(cuid())
+  jti       String    @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+model Event {
+  id                String      @id @default(cuid())
+  title             String
+  description       String      @db.Text
+  category          String
+  startsAt          DateTime
+  endsAt            DateTime
+  timezone          String      @default("UTC")
+  venue             String
+  expectedAudience  String
+  organizer         String
+  campusRelevant    Boolean     @default(false)
+  status            EventStatus @default(DRAFT)
+  createdById       String
+  archivedAt        DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  createdBy         User        @relation("EventCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  expenses          Expense[]
+
+  @@index([status, startsAt, endsAt])
+  @@index([category, startsAt])
+  @@index([createdById])
+}
+
+model Expense {
+  id              String    @id @default(cuid())
+  amount          Decimal   @db.Decimal(12, 2)
+  category        String
+  transactionDate DateTime
+  description     String    @db.Text
+  eventId         String?
+  receiptUrl      String?
+  createdById     String
+  archivedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  event           Event?    @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  createdBy       User      @relation("ExpenseCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([transactionDate, category])
+  @@index([eventId])
+  @@index([createdById])
+}
+
+model Budget {
+  id          String       @id @default(cuid())
+  name        String
+  period      BudgetPeriod
+  startsAt    DateTime
+  endsAt      DateTime
+  totalAmount Decimal      @db.Decimal(12, 2)
+  createdById String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  createdBy   User         @relation("BudgetCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([name, startsAt, endsAt])
+  @@index([period, startsAt, endsAt])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}
