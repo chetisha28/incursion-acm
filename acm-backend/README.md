@@ -50,29 +50,43 @@ All endpoints use the `/api` prefix. Responses use `{ "success", "message", "dat
 | --- | --- | --- |
 | `GET /health` | Public | Service and database health |
 | `POST /auth/executive/login` | Public, rate limited | Executive login (database role must be `EXECUTIVE`) |
-| `POST /auth/core/login` | Public, rate limited | Core login (database role must be `CORE`) |
-| `POST /auth/logout` | Authenticated | Revoke current JWT session |
-| `GET /auth/me` | Authenticated | Current account profile |
-| `GET /events` | Public | Published events with category/date/search/pagination/sort filters |
+| `POST /auth/core/login` | Public, rate limited | Core login (database role must be `CORE` or `ADMIN`) |
+| `POST /auth/logout` | Authenticated | Revoke current JWT session in database |
+| `GET /auth/me` | Authenticated | Current account profile and role |
+| `POST /auth/change-password` | Authenticated | Rotate user password (forced on first login if flagged) |
+| `GET /events` | Public / Optional Auth | Published events with category/date/search/pagination/sort filters (Core sees drafts) |
 | `GET /events/past` | Public | Published completed events, newest first |
 | `GET /events/upcoming` | Public | Published upcoming events, soonest first |
-| `GET /events/:id` | Public | Published event detail only |
-| `POST /events` | Executive, Core | Create a draft or published event |
-| `PATCH /events/:id` | Core | Update an event |
-| `DELETE /events/:id` | Core | Archive and cancel an event; preserves its history and expenses |
-| `GET /core/dashboard` | Core | Dashboard totals, conflicts, budgets, spending, and activity |
-| `GET /core/dashboard/summary` | Core | Dashboard counts and financial summary |
-| `GET /core/dashboard/conflicts` | Core | Detected event conflicts |
-| `GET /core/dashboard/recent-activity` | Core | Recent event and expense activity |
-| `GET /expenses` | Executive, Core | Filtered, paginated financial records |
-| `GET /expenses/:id` | Executive, Core | Expense detail |
-| `POST /expenses` | Executive, Core | Submit an expense |
-| `PATCH /expenses/:id` | Core | Update an expense |
-| `DELETE /expenses/:id` | Core | Archive an expense; does not erase the audit history |
-| `GET /budgets` | Executive, Core | Budgets with spending and remaining balances |
-| `GET /budgets/current` | Executive, Core | Active monthly or semester budget |
-| `POST /budgets` | Core | Create a budget |
-| `PATCH /budgets/:id` | Core | Update a budget |
+| `GET /events/:id` | Public / Optional Auth | Event detail (public views published; Core views draft proposals) |
+| `POST /events` | Executive, Core, Admin | Create event (defaults to DRAFT for Executive, PUBLISHED for Core) |
+| `PATCH /events/:id` | Core, Admin | Update event metadata and timeslots |
+| `DELETE /events/:id` | Core, Admin | Soft-archive and cancel an event; preserves history and expenses |
+| `POST /events/:id/resolve` | Core, Admin | Formal review console to publish, reschedule, or cancel a draft |
+| `GET /events/:id/upvote` | Optional Auth | Endorsement upvote total count and peer voter roster |
+| `POST /events/:id/upvote` | Executive, Core, Admin | Endorse a draft event (toggles off if already upvoted) |
+| `DELETE /events/:id/upvote` | Executive, Core, Admin | Remove endorsement upvote from a draft event |
+| `GET /core/dashboard` | Core, Admin | Aggregated dashboard: totals, conflicts, budgets, spending, drafts, team |
+| `GET /core/dashboard/summary` | Core, Admin | Summary operational counts and financial balance |
+| `GET /core/dashboard/conflicts` | Core, Admin | Automated radar matrix of detected event collisions |
+| `GET /core/dashboard/recent-activity` | Core, Admin | Chronological audit trail dispatch |
+| `GET /expenses` | Executive, Core, Admin | Filtered, paginated financial records (supports search) |
+| `GET /expenses/:id` | Executive, Core, Admin | Detailed expense record |
+| `POST /expenses` | Executive, Core, Admin | Submit an expense claim with decimal precision |
+| `PATCH /expenses/:id` | Core, Admin | Update an expense record |
+| `DELETE /expenses/:id` | Core, Admin | Soft-archive an expense; preserves historical audit trail |
+| `GET /budgets` | Executive, Core, Admin | Budgets with spending and remaining balances |
+| `GET /budgets/current` | Executive, Core, Admin | Active monthly or semester budget allocation |
+| `POST /budgets` | Core, Admin | Establish a semester or monthly budget envelope |
+| `PATCH /budgets/:id` | Core, Admin | Adjust allocation cap on an existing budget |
+| `GET /users` | Core, Admin | Chapter member directory with activity statistics |
+| `POST /users` | Core, Admin | Provision a user account with optional auto-generated credentials |
+| `GET /users/:id` | Core, Admin | User account detail |
+| `PATCH /users/:id` | Core, Admin | Update user role, title, department, or active status |
+| `DELETE /users/:id` | Core, Admin | Deactivate a user account |
+| `GET /work-assignments` | Executive, Core, Admin | Work delegation board (Executives receive their assigned tasks) |
+| `POST /work-assignments` | Core, Admin | Delegate a task assignment to an executive officer |
+| `PATCH /work-assignments/:id` | Executive, Core, Admin | Update task status (`PENDING`, `IN_PROGRESS`, `COMPLETED`) |
+| `DELETE /work-assignments/:id` | Core, Admin | Delete a delegated task assignment |
 
 ## Example requests
 
@@ -107,7 +121,9 @@ Content-Type: application/json
 }
 ```
 
-Conflicts check true time overlap and any of: same venue (case-insensitive), an intersecting comma/semicolon-separated audience label (with `all`, `everyone`, or `campus` treated as universal), or both events marked campus-relevant. Cancelled and archived events are excluded. The write checks and event change run in a serializable database transaction. By default, a conflict returns 409 with the conflicting event IDs, titles, times, venue, and reason. A Core member may review the conflict and explicitly send `"allowConflict": true` in a create or update request to proceed; executives cannot override it. Events are never automatically cancelled.
+Conflicts check true time overlap and any of: same venue (case-insensitive), an intersecting comma/semicolon-separated audience label (with `all`, `everyone`, or `campus` treated as universal), or both events marked campus-relevant. Cancelled and archived events are excluded. The write checks and event change run in a serializable database transaction. By default, a conflict returns 409 with the conflicting event IDs, titles, times, venue, and reason. When confirmed, sending `"allowConflict": true` allows both Executive (as a draft proposal) and Core (as published) to proceed with explicit acknowledgment.
+
+For complete architectural diagrams, user flowcharts, and system specifications, refer to the master [README.md](../README.md).
 
 Create an expense as a finance-authorized user. Supply amounts as decimal strings, not JSON floating-point numbers. Receipt hosting is not configured; an optional HTTPS receipt URL can be recorded.
 
