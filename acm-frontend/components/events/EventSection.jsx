@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import { ArrowDown, Plus, SlidersHorizontal } from 'lucide-react';
+import { ArrowDown, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { useEvents } from '@/hooks/useEvents';
@@ -32,9 +32,16 @@ export function EventSection({ activeTab, onTabChange }) {
 
   const { user, role, token } = useAuth();
   const toast = useToast();
-  const mode = activeTab === 'past' ? 'past' : 'list';
+  const [upvotingId, setUpvotingId] = useState(null);
+  const isPrivileged = Boolean(user && (role === 'EXECUTIVE' || role === 'CORE' || role === 'ADMIN'));
+  const mode = activeTab === 'past' ? 'past' : activeTab === 'proposals' ? 'proposals' : 'list';
   const events = useEvents(mode, filters, token);
-  const categories = useMemo(() => [...new Set(events.items.map((event) => event.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [events.items]);
+
+  const categories = useMemo(
+    () => [...new Set(events.items.map((event) => event.category).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [events.items]
+  );
+
   const changeFilters = useCallback((change) => setFilters((current) => ({ ...current, ...change })), []);
 
   const openCreate = () => { setEditing(null); setFormOpen(true); };
@@ -43,10 +50,47 @@ export function EventSection({ activeTab, onTabChange }) {
 
   const saveEvent = async (payload) => {
     if (!token) throw new Error('Sign in to submit an event.');
-    if (editing) await api.updateEvent(editing.id, payload, token);
-    else await api.createEvent(payload, token);
+    if (editing) {
+      await api.updateEvent(editing.id, payload, token);
+      toast('Event updated on the ACM calendar.');
+    } else {
+      await api.createEvent(payload, token);
+      toast(
+        role === 'EXECUTIVE'
+          ? 'Your event was submitted for Core review and executive peer-verification.'
+          : 'Event scheduled and published to the ACM calendar.'
+      );
+    }
     events.refresh();
-    toast(role === 'EXECUTIVE' && !editing ? 'Your event was submitted as a draft for Core review.' : 'Event saved to the ACM calendar.');
+  };
+
+  const handleUpvote = async (event) => {
+    if (!token) {
+      toast('Please log in with an Executive or Core account to upvote proposals.', 'error');
+      return;
+    }
+    if (upvotingId === event.id) return;
+    setUpvotingId(event.id);
+    try {
+      const res = await api.upvoteEvent(event.id, token);
+      const newUpvotes = res.data.upvotes || [];
+      events.updateItem(event.id, { upvotes: newUpvotes });
+      if (selected && selected.id === event.id) {
+        setSelected((curr) => ({
+          ...curr,
+          upvotes: newUpvotes
+        }));
+      }
+      toast(
+        res.data.upvoted
+          ? `Endorsed “${event.title}” (${res.data.upvoteCount} upvotes).`
+          : `Removed endorsement for “${event.title}”.`
+      );
+    } catch (err) {
+      toast(err.message || 'Could not update verification upvote.', 'error');
+    } finally {
+      setUpvotingId(null);
+    }
   };
 
   const archive = (event) => {
@@ -74,31 +118,138 @@ export function EventSection({ activeTab, onTabChange }) {
   return (
     <section className="events-section page-shell" id="events" aria-labelledby="events-heading">
       <div className="section-heading-row">
-        <div><p className="section-kicker">THE ACM CALENDAR</p><h2 id="events-heading">Find your <em>next thing.</em></h2></div>
-        <p className="section-aside">Good ideas don’t happen in a vacuum.<br />Start with a room and a time.</p>
+        <div>
+          <p className="section-kicker">THE ACM CALENDAR</p>
+          <h2 id="events-heading">Find your <em>next thing.</em></h2>
+        </div>
+        <p className="section-aside">
+          Good ideas don’t happen in a vacuum.<br />Start with a room and a time.
+        </p>
       </div>
-      <EventTabs active={activeTab} onChange={onTabChange} />
+
+      <EventTabs active={activeTab} onChange={onTabChange} showProposals={isPrivileged} />
+
       <div id="event-tab-panel" role="tabpanel" aria-labelledby={`tab-${activeTab}`} className="event-tab-panel" tabIndex="0">
-        {activeTab === 'all' && <>
-          <div className="event-tools"><div className="event-list-intro"><span className="micro-label"><SlidersHorizontal size={13} /> UPCOMING / PUBLISHED</span><p>All times are shown in each event’s local timezone.</p></div><div className="event-tools-actions">{(role === 'EXECUTIVE' || role === 'CORE') && <button type="button" className="button button-primary button-compact" onClick={openCreate}><Plus size={15} /> {role === 'EXECUTIVE' ? 'Submit an event' : 'Create event'}</button>}</div></div>
-          <EventFilters categories={categories} category={filters.category} search={filters.search} onChange={changeFilters} />
-          {events.loading && events.items.length === 0 && <LoadingState label="Loading upcoming events" />}
-          {events.error && <ErrorState message={events.error.message} onRetry={events.retry} />}
-          {!events.loading && !events.error && events.items.length === 0 && <EmptyState title={filters.search || filters.category ? 'No matching events' : 'No upcoming events'} message={filters.search || filters.category ? 'Try another search or category.' : 'The next date is still being planned. Check back when the calendar moves.'} />}
-          {events.items.length > 0 && <EventGrid events={events.items} role={role} onOpen={setSelected} onEdit={openEdit} onArchive={archive} />}
-          {events.hasMore && <div className="load-more-row"><button type="button" className="button button-secondary" disabled={events.loading} onClick={events.loadMore}>{events.loading ? 'Loading…' : 'Load more events'} {!events.loading && <ArrowDown size={14} />}</button><span>Showing {events.items.length} of {events.pagination.total}</span></div>}
-        </>}
+        {activeTab === 'all' && (
+          <>
+            <div className="event-tools">
+              <div className="event-list-intro">
+                <span className="micro-label"><SlidersHorizontal size={13} /> UPCOMING / PUBLISHED</span>
+                <p>All times are shown in each event’s local timezone.</p>
+              </div>
+              <div className="event-tools-actions">
+                {isPrivileged && (
+                  <button type="button" className="button button-primary button-compact" onClick={openCreate}>
+                    <Plus size={15} /> {role === 'EXECUTIVE' ? 'Submit an event' : 'Create event'}
+                  </button>
+                )}
+              </div>
+            </div>
+            <EventFilters categories={categories} category={filters.category} search={filters.search} onChange={changeFilters} />
+            {events.loading && events.items.length === 0 && <LoadingState label="Loading upcoming events" />}
+            {events.error && <ErrorState message={events.error.message} onRetry={events.retry} />}
+            {!events.loading && !events.error && events.items.length === 0 && (
+              <EmptyState
+                title={filters.search || filters.category ? 'No matching events' : 'No upcoming events'}
+                message={filters.search || filters.category ? 'Try another search or category.' : 'The next date is still being planned. Check back when the calendar moves.'}
+              />
+            )}
+            {events.items.length > 0 && (
+              <EventGrid
+                events={events.items}
+                role={role}
+                userId={user?.id}
+                onOpen={setSelected}
+                onEdit={openEdit}
+                onArchive={archive}
+                onUpvote={handleUpvote}
+                upvotingId={upvotingId}
+              />
+            )}
+            {events.hasMore && (
+              <div className="load-more-row">
+                <button type="button" className="button button-secondary" disabled={events.loading} onClick={events.loadMore}>
+                  {events.loading ? 'Loading…' : 'Load more events'} {!events.loading && <ArrowDown size={14} />}
+                </button>
+                <span>Showing {events.items.length} of {events.pagination.total}</span>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Proposals Awaiting Review Tab (Requirements 2 & 3) */}
+        {activeTab === 'proposals' && (
+          <>
+            <div className="event-tools">
+              <div className="event-list-intro">
+                <span className="micro-label"><Sparkles size={13} /> PROPOSALS // AWAITING CORE REVIEW</span>
+                <p>Proposals submitted by chapter executives. Authenticated executives can upvote to peer-verify events.</p>
+              </div>
+              <div className="event-tools-actions">
+                <button type="button" className="button button-primary button-compact" onClick={openCreate}>
+                  <Plus size={15} /> Propose New Event
+                </button>
+              </div>
+            </div>
+            <EventFilters categories={categories} category={filters.category} search={filters.search} onChange={changeFilters} />
+            {events.loading && events.items.length === 0 && <LoadingState label="Loading proposals awaiting review" />}
+            {events.error && <ErrorState message={events.error.message} onRetry={events.retry} />}
+            {!events.loading && !events.error && events.items.length === 0 && (
+              <EmptyState
+                title="No pending proposals"
+                message="All submitted events have been reviewed. Use 'Propose New Event' to submit a date."
+              />
+            )}
+            {events.items.length > 0 && (
+              <EventGrid
+                events={events.items}
+                role={role}
+                userId={user?.id}
+                onOpen={setSelected}
+                onEdit={openEdit}
+                onArchive={archive}
+                onUpvote={handleUpvote}
+                upvotingId={upvotingId}
+              />
+            )}
+          </>
+        )}
+
         {activeTab === 'calendar' && <EventCalendar />}
-        {activeTab === 'past' && <>
-          <div className="past-intro"><span className="micro-label">THE ARCHIVE / COMPLETED</span><p>A record of the rooms we filled and the things we figured out together.</p></div>
-          {events.loading && events.items.length === 0 && <LoadingState label="Loading past events" />}
-          {events.error && <ErrorState title="The archive couldn’t load." message={events.error.message} onRetry={events.retry} />}
-          {!events.loading && !events.error && events.items.length === 0 && <EmptyState title="The archive is empty" message="Completed public events will appear here." />}
-          {events.items.length > 0 && <EventGrid events={events.items} role="VIEWER" onOpen={setSelected} />}
-        </>}
+
+        {activeTab === 'past' && (
+          <>
+            <div className="past-intro">
+              <span className="micro-label">THE ARCHIVE // COMPLETED</span>
+              <p>A record of the rooms we filled and the things we figured out together.</p>
+            </div>
+            {events.loading && events.items.length === 0 && <LoadingState label="Loading past events" />}
+            {events.error && <ErrorState title="The archive couldn’t load." message={events.error.message} onRetry={events.retry} />}
+            {!events.loading && !events.error && events.items.length === 0 && (
+              <EmptyState title="The archive is empty" message="Completed public events will appear here." />
+            )}
+            {events.items.length > 0 && <EventGrid events={events.items} role="VIEWER" onOpen={setSelected} />}
+          </>
+        )}
       </div>
-      <EventDetails event={selected} onClose={() => setSelected(null)} />
-      <EventForm open={formOpen} event={editing} role={role} onClose={closeForm} onSave={saveEvent} />
+
+      <EventDetails
+        event={selected}
+        role={role}
+        userId={user?.id}
+        onClose={() => setSelected(null)}
+        onUpvote={handleUpvote}
+        isUpvoting={upvotingId === selected?.id}
+      />
+
+      <EventForm
+        open={formOpen}
+        event={editing}
+        role={role}
+        onClose={closeForm}
+        onSave={saveEvent}
+      />
+
       <ConfirmModal
         open={confirmModal.open}
         title={confirmModal.title}
@@ -109,6 +260,7 @@ export function EventSection({ activeTab, onTabChange }) {
         onClose={() => setConfirmModal((curr) => ({ ...curr, open: false }))}
         onConfirm={confirmModal.onConfirm}
       />
+
       {user && <span className="visually-hidden" aria-live="polite">Signed in as {user.name}</span>}
     </section>
   );

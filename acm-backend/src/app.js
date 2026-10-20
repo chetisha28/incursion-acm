@@ -21,7 +21,7 @@ app.use(cors({
     return callback(null, false);
   },
   credentials: false,
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Authorization', 'Content-Type']
 }));
 app.use(express.json({ limit: '1mb' }));

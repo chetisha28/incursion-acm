@@ -9,7 +9,10 @@ import { LoadingState } from '@/components/ui/LoadingState';
 export function ProtectedRoute({ roles = ['CORE', 'EXECUTIVE'], role, children }) {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const allowed = roles ? (Array.isArray(roles) ? roles : [roles]) : (role ? [role] : ['CORE', 'EXECUTIVE']);
+  const baseAllowed = roles ? (Array.isArray(roles) ? roles : [roles]) : (role ? [role] : ['CORE', 'EXECUTIVE']);
+  const allowed = baseAllowed.includes('CORE') && !baseAllowed.includes('ADMIN')
+    ? [...baseAllowed, 'ADMIN']
+    : baseAllowed;
 
   useEffect(() => {
     if (!loading && !user) router.replace(`/login?mode=core&next=/core/dashboard`);

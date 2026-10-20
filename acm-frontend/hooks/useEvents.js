@@ -26,37 +26,81 @@ export function useEvents(mode = 'list', filters = {}, token = null) {
     setLoading(true);
     setError(null);
     const now = new Date();
-    const request = mode === 'past'
-      ? api.pastEvents({ signal: controller.signal })
-      : mode === 'upcoming'
-        ? api.upcomingEvents({ signal: controller.signal })
-        : api.listEvents({
-          page: requestedPage,
-          limit: 20,
-          sortBy: 'startsAt',
-          order: 'asc',
-          from: now.toISOString(),
-          category: filters.category,
-          search: filters.search,
-          ...(filters.status ? { status: filters.status } : {})
-        }, token, { signal: controller.signal });
 
-    request.then((response) => {
-      const results = response.data || [];
-      setItems((previous) => mode === 'list' && requestedPage > 1 && !queryChanged ? [...previous, ...results] : results);
-      setPagination(response.pagination || { page: 1, limit: results.length, total: results.length, totalPages: 1 });
-    }).catch((requestError) => {
-      if (requestError.name !== 'AbortError') setError(requestError);
-    }).finally(() => {
-      if (!controller.signal.aborted) setLoading(false);
-    });
+    const request =
+      mode === 'past'
+        ? api.pastEvents({ signal: controller.signal })
+        : mode === 'upcoming'
+        ? api.upcomingEvents({ signal: controller.signal })
+        : mode === 'proposals'
+        ? api.listEvents(
+            {
+              page: requestedPage,
+              limit: 20,
+              sortBy: 'createdAt',
+              order: 'desc',
+              status: 'DRAFT',
+              category: filters.category,
+              search: filters.search
+            },
+            token,
+            { signal: controller.signal }
+          )
+        : api.listEvents(
+            {
+              page: requestedPage,
+              limit: 20,
+              sortBy: 'startsAt',
+              order: 'asc',
+              from: now.toISOString(),
+              category: filters.category,
+              search: filters.search,
+              ...(filters.status ? { status: filters.status } : {})
+            },
+            token,
+            { signal: controller.signal }
+          );
+
+    request
+      .then((response) => {
+        const results = response.data || [];
+        setItems((previous) =>
+          (mode === 'list' || mode === 'proposals') && requestedPage > 1 && !queryChanged
+            ? [...previous, ...results]
+            : results
+        );
+        setPagination(
+          response.pagination || {
+            page: 1,
+            limit: results.length,
+            total: results.length,
+            totalPages: 1
+          }
+        );
+      })
+      .catch((requestError) => {
+        if (requestError.name !== 'AbortError') setError(requestError);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
     return () => controller.abort();
   }, [mode, filters.category, filters.search, filters.status, token, queryKey, page, reloadKey]);
 
   const loadMore = useCallback(() => {
     if (!loading && page < pagination.totalPages) setPage((current) => current + 1);
   }, [loading, page, pagination.totalPages]);
+
   const retry = useCallback(() => setReloadKey((current) => current + 1), []);
-  const refresh = useCallback(() => { setPage(1); setReloadKey((current) => current + 1); }, []);
-  return { items, pagination, loading, error, hasMore: mode === 'list' && page < pagination.totalPages, loadMore, retry, refresh };
+  const refresh = useCallback(() => {
+    setPage(1);
+    setReloadKey((current) => current + 1);
+  }, []);
+
+  const updateItem = useCallback((id, patch) => {
+    setItems((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }, []);
+
+  return { items, setItems, updateItem, loading, error, pagination, loadMore, hasMore: page < pagination.totalPages, retry, refresh };
 }

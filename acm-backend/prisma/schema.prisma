@@ -12,6 +12,7 @@ enum Role {
   VIEWER
   EXECUTIVE
   CORE
+  ADMIN
 }
 
 enum EventStatus {
@@ -25,23 +26,48 @@ enum BudgetPeriod {
   SEMESTER
 }
 
+enum AssignmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AssignmentPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
 model User {
-  id              String        @id @default(cuid())
-  email           String        @unique
-  name            String
-  passwordHash    String
-  role            Role
-  isActive        Boolean       @default(true)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  sessions        AuthSession[]
-  createdEvents   Event[]       @relation("EventCreator")
-  createdExpenses Expense[]     @relation("ExpenseCreator")
-  createdBudgets  Budget[]      @relation("BudgetCreator")
-  resolvedEvents  Event[]       @relation("EventResolver")
-  activityLogs    ActivityLog[]
+  id                 String           @id @default(cuid())
+  email              String           @unique
+  name               String
+  passwordHash       String
+  role               Role
+  title              String?
+  department         String?
+  mustChangePassword Boolean          @default(false)
+  isActive           Boolean          @default(true)
+  createdById        String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  sessions           AuthSession[]
+  createdEvents      Event[]          @relation("EventCreator")
+  assignedEvents     Event[]          @relation("AssignedEvents")
+  createdExpenses    Expense[]        @relation("ExpenseCreator")
+  createdBudgets     Budget[]         @relation("BudgetCreator")
+  resolvedEvents     Event[]          @relation("EventResolver")
+  eventUpvotes       EventUpvote[]
+  activityLogs       ActivityLog[]
+  createdWork        WorkAssignment[] @relation("CreatedWork")
+  assignedWork       WorkAssignment[] @relation("AssignedWork")
+  createdByAdmin     User?            @relation("UserHierarchy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdUsers       User[]           @relation("UserHierarchy")
 
   @@index([role, isActive])
+  @@index([createdById])
 }
 
 model AuthSession {
@@ -58,32 +84,37 @@ model AuthSession {
 }
 
 model Event {
-  id                String      @id @default(cuid())
+  id                String           @id @default(cuid())
   title             String
-  description       String      @db.Text
+  description       String           @db.Text
   category          String
   startsAt          DateTime
   endsAt            DateTime
-  timezone          String      @default("UTC")
+  timezone          String           @default("UTC")
   venue             String
   expectedAudience  String
   organizer         String
-  campusRelevant    Boolean     @default(false)
-  status            EventStatus @default(DRAFT)
+  campusRelevant    Boolean          @default(false)
+  status            EventStatus      @default(DRAFT)
   createdById       String
+  assignedToId      String?
   archivedAt        DateTime?
   resolvedAt        DateTime?
   resolvedById      String?
-  resolutionNotes   String?     @db.Text
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-  createdBy         User        @relation("EventCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  resolver          User?       @relation("EventResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolutionNotes   String?          @db.Text
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  createdBy         User             @relation("EventCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  assignedTo        User?            @relation("AssignedEvents", fields: [assignedToId], references: [id], onDelete: SetNull)
+  resolver          User?            @relation("EventResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
   expenses          Expense[]
+  upvotes           EventUpvote[]
+  assignments       WorkAssignment[]
 
   @@index([status, startsAt, endsAt])
   @@index([category, startsAt])
   @@index([createdById])
+  @@index([assignedToId])
   @@index([resolvedById])
 }
 
@@ -135,4 +166,39 @@ model ActivityLog {
 
   @@index([createdAt])
   @@index([entityType, entityId])
+}
+
+model EventUpvote {
+  id        String   @id @default(cuid())
+  eventId   String
+  userId    String
+  createdAt DateTime @default(now())
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+model WorkAssignment {
+  id          String             @id @default(cuid())
+  title       String
+  description String?            @db.Text
+  status      AssignmentStatus   @default(PENDING)
+  priority    AssignmentPriority @default(MEDIUM)
+  dueDate     DateTime?
+  assigneeId  String
+  assignerId  String
+  eventId     String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  assignee    User               @relation("AssignedWork", fields: [assigneeId], references: [id], onDelete: Cascade)
+  assigner    User               @relation("CreatedWork", fields: [assignerId], references: [id], onDelete: Restrict)
+  event       Event?             @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([assigneeId, status])
+  @@index([assignerId])
+  @@index([eventId])
 }

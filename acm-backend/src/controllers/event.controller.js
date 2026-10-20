@@ -24,11 +24,34 @@ export const publicEventSelect = {
   resolutionNotes: true,
   createdAt: true,
   updatedAt: true,
+  assignedToId: true,
   createdBy: {
     select: { id: true, name: true, email: true, role: true }
   },
+  assignedTo: {
+    select: { id: true, name: true, email: true, title: true, role: true }
+  },
   resolver: {
     select: { id: true, name: true, email: true, role: true }
+  },
+  upvotes: {
+    select: {
+      id: true,
+      userId: true,
+      createdAt: true,
+      user: {
+        select: { id: true, name: true, role: true }
+      }
+    }
+  },
+  assignments: {
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      priority: true,
+      dueDate: true
+    }
   }
 };
 
@@ -37,6 +60,11 @@ function buildEventWhere(query = {}, user = null) {
   if (query.status) {
     if (query.status === 'ALL') {
       statusCondition = user?.role === 'CORE' ? {} : { status: 'PUBLISHED', archivedAt: null };
+    } else if (query.status === 'DRAFT') {
+      // Both CORE and EXECUTIVE can view drafts awaiting review
+      statusCondition = (user?.role === 'CORE' || user?.role === 'EXECUTIVE')
+        ? { status: 'DRAFT', archivedAt: null }
+        : { status: 'PUBLISHED', archivedAt: null };
     } else {
       statusCondition = { status: query.status, ...(query.status === 'CANCELLED' ? {} : { archivedAt: null }) };
     }
@@ -47,7 +75,7 @@ function buildEventWhere(query = {}, user = null) {
       archivedAt: null,
       OR: [
         { status: 'PUBLISHED' },
-        { createdById: user.id }
+        { status: 'DRAFT' }
       ]
     };
   } else {
@@ -141,7 +169,7 @@ export const getEvent = asyncHandler(async (req, res) => {
       archivedAt: null,
       OR: [
         { status: 'PUBLISHED' },
-        { createdById: req.user.id }
+        { status: 'DRAFT' }
       ]
     };
   } else {
@@ -160,11 +188,18 @@ export const createEvent = asyncHandler(async (req, res) => {
   const { allowConflict, ...data } = req.body;
   const result = await prisma.$transaction(async (tx) => {
     const conflicts = data.status === 'CANCELLED' ? [] : await findEventConflicts(tx, data);
-    if (conflicts.length && !(req.user.role === 'CORE' && allowConflict === true)) {
+    // If overlaps exist and allowConflict was not explicitly sent, warn with 409
+    if (conflicts.length && !allowConflict) {
       throw new ApiError(409, 'Event scheduling conflicts were found', 'SCHEDULING_CONFLICT', conflicts);
     }
+    // Both Executive and Core can submit with allowConflict: true!
+    const targetStatus = req.user.role === 'CORE' ? (data.status || 'PUBLISHED') : 'DRAFT';
     const event = await tx.event.create({
-      data: { ...data, createdById: req.user.id },
+      data: {
+        ...data,
+        status: targetStatus,
+        createdById: req.user.id
+      },
       select: publicEventSelect
     });
     await tx.activityLog.create({
@@ -173,11 +208,11 @@ export const createEvent = asyncHandler(async (req, res) => {
         action: 'EVENT_CREATED',
         entityType: 'Event',
         entityId: event.id,
-        metadata: { title: event.title, status: event.status }
+        metadata: { title: event.title, status: event.status, hasConflicts: conflicts.length > 0 }
       }
     });
     return { event, conflicts };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, { timeout: 20000, maxWait: 10000 });
   const { event, conflicts } = result;
   res.status(201).json({ success: true, message: 'Event created successfully', data: { ...event, conflicts } });
 });
@@ -210,7 +245,7 @@ export const updateEvent = asyncHandler(async (req, res) => {
       }
     });
     return { event, conflicts };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, { timeout: 20000, maxWait: 10000 });
   const { event, conflicts } = result;
   res.json({ success: true, message: 'Event updated successfully', data: { ...event, conflicts } });
 });
@@ -264,12 +299,162 @@ export const resolveEvent = asyncHandler(async (req, res) => {
       }
     });
     return { event, conflicts };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, { timeout: 20000, maxWait: 10000 });
   const { event, conflicts } = result;
   res.json({
     success: true,
     message: `Event successfully resolved with status ${event.status}`,
     data: { ...event, conflicts }
+  });
+});
+
+export const upvoteEvent = asyncHandler(async (req, res) => {
+  const event = await prisma.event.findFirst({
+    where: { id: req.params.id, archivedAt: null },
+    select: { id: true, title: true, status: true }
+  });
+  if (!event) throw new ApiError(404, 'Event not found', 'NOT_FOUND');
+  if (event.status !== 'DRAFT') {
+    throw new ApiError(400, 'Upvoting is only available for events currently awaiting review', 'INVALID_EVENT_STATE');
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const existing = await tx.eventUpvote.findUnique({
+      where: { eventId_userId: { eventId: event.id, userId: req.user.id } }
+    });
+
+    let upvoted;
+    if (existing) {
+      await tx.eventUpvote.delete({ where: { id: existing.id } });
+      upvoted = false;
+      await tx.activityLog.create({
+        data: {
+          actorId: req.user.id,
+          action: 'EVENT_UPVOTE_REMOVED',
+          entityType: 'Event',
+          entityId: event.id,
+          metadata: { title: event.title }
+        }
+      });
+    } else {
+      await tx.eventUpvote.create({
+        data: { eventId: event.id, userId: req.user.id }
+      });
+      upvoted = true;
+      await tx.activityLog.create({
+        data: {
+          actorId: req.user.id,
+          action: 'EVENT_UPVOTED',
+          entityType: 'Event',
+          entityId: event.id,
+          metadata: { title: event.title }
+        }
+      });
+    }
+
+    const upvotes = await tx.eventUpvote.findMany({
+      where: { eventId: event.id },
+      select: {
+        id: true,
+        userId: true,
+        createdAt: true,
+        user: { select: { id: true, name: true, role: true } }
+      }
+    });
+
+    return { upvoted, upvotes, count: upvotes.length };
+  });
+
+  res.json({
+    success: true,
+    message: result.upvoted ? 'Event upvoted successfully' : 'Upvote removed successfully',
+    data: {
+      eventId: event.id,
+      upvoted: result.upvoted,
+      upvoteCount: result.count,
+      upvotesCount: result.count,
+      upvotes: result.upvotes
+    }
+  });
+});
+
+export const removeUpvoteEvent = asyncHandler(async (req, res) => {
+  const event = await prisma.event.findFirst({
+    where: { id: req.params.id, archivedAt: null },
+    select: { id: true, title: true, status: true }
+  });
+  if (!event) throw new ApiError(404, 'Event not found', 'NOT_FOUND');
+
+  const result = await prisma.$transaction(async (tx) => {
+    const existing = await tx.eventUpvote.findUnique({
+      where: { eventId_userId: { eventId: event.id, userId: req.user.id } }
+    });
+    if (existing) {
+      await tx.eventUpvote.delete({ where: { id: existing.id } });
+      await tx.activityLog.create({
+        data: {
+          actorId: req.user.id,
+          action: 'EVENT_UPVOTE_REMOVED',
+          entityType: 'Event',
+          entityId: event.id,
+          metadata: { title: event.title }
+        }
+      });
+    }
+    const upvotes = await tx.eventUpvote.findMany({
+      where: { eventId: event.id },
+      select: {
+        id: true,
+        userId: true,
+        createdAt: true,
+        user: { select: { id: true, name: true, role: true } }
+      }
+    });
+    return { upvoted: false, count: upvotes.length, upvotes };
+  });
+
+  res.json({
+    success: true,
+    message: 'Upvote removed successfully',
+    data: {
+      eventId: event.id,
+      upvoted: false,
+      upvoteCount: result.count,
+      upvotesCount: result.count,
+      upvotes: result.upvotes
+    }
+  });
+});
+
+export const getEventUpvoteStatus = asyncHandler(async (req, res) => {
+  const event = await prisma.event.findFirst({
+    where: { id: req.params.id, archivedAt: null },
+    select: { id: true, title: true, status: true }
+  });
+  if (!event) throw new ApiError(404, 'Event not found', 'NOT_FOUND');
+
+  const upvotes = await prisma.eventUpvote.findMany({
+    where: { eventId: event.id },
+    select: {
+      id: true,
+      userId: true,
+      createdAt: true,
+      user: { select: { id: true, name: true, role: true } }
+    }
+  });
+
+  const upvoted = req.user ? upvotes.some((u) => u.userId === req.user.id) : false;
+
+  res.json({
+    success: true,
+    data: {
+      eventId: event.id,
+      upvoted,
+      hasUpvoted: upvoted,
+      upvoteCount: upvotes.length,
+      upvotesCount: upvotes.length,
+      upvotes
+    }
   });
 });
 

@@ -4,17 +4,21 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowBigUp,
   ArrowLeft,
   ArrowUpRight,
   BarChart3,
+  Briefcase,
   Calendar,
   CalendarClock,
   CalendarPlus,
   CheckCircle2,
   CircleDollarSign,
+  Clock,
   FileSpreadsheet,
   FileText,
   IndianRupee,
+  KeyRound,
   Layers,
   LayoutDashboard,
   MapPin,
@@ -25,6 +29,9 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  UserCheck,
+  UserPlus,
+  Users,
   UsersRound,
   Wallet
 } from 'lucide-react';
@@ -38,6 +45,9 @@ import { ConflictList } from './ConflictList';
 import { ConflictCenter } from './ConflictCenter';
 import { AnalyticsReports } from './AnalyticsReports';
 import { ActivityFeed } from './ActivityFeed';
+import { TeamManagement } from './TeamManagement';
+import { WorkAssignments } from './WorkAssignments';
+import { ChangePasswordModal } from '@/components/auth/ChangePasswordModal';
 import { EventForm } from '@/components/events/EventForm';
 import { EventResolveModal } from '@/components/events/EventResolveModal';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
@@ -66,6 +76,15 @@ function DashboardContent() {
   const [expensesLoading, setExpensesLoading] = useState(false);
   const [agendaFilter, setAgendaFilter] = useState('ALL');
 
+  // Team & Work Assignments State
+  const [teamUsers, setTeamUsers] = useState([]);
+  const [workAssignments, setWorkAssignments] = useState([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [workLoading, setWorkLoading] = useState(false);
+  const [presetAssignee, setPresetAssignee] = useState(null);
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [upvotingEventId, setUpvotingEventId] = useState(null);
+
   // Modal States
   const [createEventOpen, setCreateEventOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
@@ -91,6 +110,8 @@ function DashboardContent() {
     try {
       const response = await api.coreDashboard(token, { signal });
       setDashboard(response.data);
+      if (response.data?.teamMembers) setTeamUsers(response.data.teamMembers);
+      if (response.data?.workAssignments) setWorkAssignments(response.data.workAssignments);
     } catch (requestError) {
       if (requestError.name !== 'AbortError') setError(requestError);
     } finally {
@@ -118,12 +139,71 @@ function DashboardContent() {
     }
   }, [token]);
 
+  // Load Team Users and Work Assignments
+  const loadTeamAndWork = useCallback(async (signal) => {
+    if (!token) return;
+    setTeamLoading(true);
+    setWorkLoading(true);
+    try {
+      const [userRes, workRes] = await Promise.all([
+        api.listUsers({ limit: 100 }, token, { signal }),
+        api.listWorkAssignments({ limit: 100 }, token, { signal })
+      ]);
+      setTeamUsers(userRes.data || []);
+      setWorkAssignments(workRes.data || []);
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.warn('Could not load team / work assignments:', err);
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setTeamLoading(false);
+        setWorkLoading(false);
+      }
+    }
+  }, [token]);
+
   useEffect(() => {
     const controller = new AbortController();
     loadDashboard(controller.signal);
     loadExpensesAndEvents(controller.signal);
+    loadTeamAndWork(controller.signal);
     return () => controller.abort();
-  }, [loadDashboard, loadExpensesAndEvents, refreshKey]);
+  }, [loadDashboard, loadExpensesAndEvents, loadTeamAndWork, refreshKey]);
+
+  // Upvote Handler with optimistic update and concurrency lock
+  const handleUpvoteEvent = async (event) => {
+    if (!token) return;
+    if (upvotingEventId === event.id) return;
+    setUpvotingEventId(event.id);
+    try {
+      const res = await api.upvoteEvent(event.id, token);
+      const newUpvotes = res.data.upvotes || [];
+      // Optimistic update in eventsList
+      setEventsList((curr) =>
+        curr.map((e) => (e.id === event.id ? { ...e, upvotes: newUpvotes } : e))
+      );
+      // Optimistic update in dashboard eventsUnderReview
+      setDashboard((curr) => {
+        if (!curr) return curr;
+        return {
+          ...curr,
+          eventsUnderReview: (curr.eventsUnderReview || []).map((e) =>
+            e.id === event.id ? { ...e, upvotes: newUpvotes } : e
+          )
+        };
+      });
+      toast(
+        res.data.upvoted
+          ? `Endorsed “${event.title}” (${res.data.upvoteCount} upvotes).`
+          : `Removed endorsement for “${event.title}”.`
+      );
+    } catch (err) {
+      toast(err.message || 'Could not update verification upvote.', 'error');
+    } finally {
+      setUpvotingEventId(null);
+    }
+  };
 
   const refreshAll = () => setRefreshKey((k) => k + 1);
 
@@ -172,6 +252,47 @@ function DashboardContent() {
     setResolveModalOpen(false);
     setResolvingItem(null);
     refreshAll();
+  };
+
+  const handleQuickApprove = async (event) => {
+    try {
+      await api.resolveEvent(
+        event.id,
+        { status: 'PUBLISHED', resolutionNotes: 'Approved directly from Core Review Queue.' },
+        token
+      );
+      toast(`Proposal “${event.title}” approved and published.`);
+      refreshAll();
+    } catch (err) {
+      toast(err.message || 'Could not approve event.', 'error');
+    }
+  };
+
+  const handleQuickReject = (event) => {
+    setConfirmModal({
+      open: true,
+      title: `Reject Proposal “${event.title}”?`,
+      message: `This will mark the event proposal as CANCELLED. The submitting executive will be informed via status history.`,
+      confirmLabel: 'Reject Proposal',
+      confirmTone: 'danger',
+      confirming: false,
+      onConfirm: async () => {
+        setConfirmModal((curr) => ({ ...curr, confirming: true }));
+        try {
+          await api.resolveEvent(
+            event.id,
+            { status: 'CANCELLED', resolutionNotes: 'Rejected during Core desk review.' },
+            token
+          );
+          toast(`Proposal “${event.title}” marked as rejected.`);
+          setConfirmModal((curr) => ({ ...curr, open: false, confirming: false }));
+          refreshAll();
+        } catch (err) {
+          toast(err.message || 'Could not reject proposal.', 'error');
+          setConfirmModal((curr) => ({ ...curr, confirming: false }));
+        }
+      }
+    });
   };
 
   const handleArchiveEvent = (event) => {
@@ -274,7 +395,14 @@ function DashboardContent() {
     return list.sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
   }, [eventsList, agendaFilter]);
 
-  const draftCount = useMemo(() => eventsList.filter((e) => e.status === 'DRAFT').length, [eventsList]);
+  const inReviewEvents = useMemo(() => {
+    const list = dashboard?.eventsUnderReview?.length
+      ? dashboard.eventsUnderReview
+      : eventsList.filter((e) => e.status === 'DRAFT');
+    return [...list].sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+  }, [dashboard?.eventsUnderReview, eventsList]);
+
+  const draftCount = useMemo(() => inReviewEvents.length, [inReviewEvents]);
   const pubCount = useMemo(() => eventsList.filter((e) => e.status === 'PUBLISHED').length, [eventsList]);
   const cancCount = useMemo(() => eventsList.filter((e) => e.status === 'CANCELLED').length, [eventsList]);
 
@@ -303,8 +431,19 @@ function DashboardContent() {
                 {user?.name?.charAt(0)?.toUpperCase() || 'C'}
               </span>
               <span className="dashboard-user-name">{user?.name}</span>
-              <span className="badge badge-default">CORE MEMBER</span>
+              <span className="badge badge-default">
+                {user?.role === 'ADMIN' ? 'ADMINISTRATOR' : 'CORE MEMBER'}
+              </span>
             </span>
+            <button
+              className="button button-outline button-compact"
+              type="button"
+              onClick={() => setPasswordModalOpen(true)}
+              title="Change account password"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            >
+              <KeyRound size={12} /> Password
+            </button>
             <button className="button button-outline button-compact" type="button" onClick={signOut}>
               Sign out
             </button>
@@ -400,6 +539,24 @@ function DashboardContent() {
             onClick={() => setActiveTab('analytics')}
           >
             [ 04 · ANALYTICAL REPORT ]
+          </button>
+
+          <button
+            type="button"
+            className={`workspace-nav-btn ${activeTab === 'team' ? 'workspace-nav-btn-active' : ''}`}
+            onClick={() => setActiveTab('team')}
+          >
+            [ 05 · CHAPTER TEAM & EXECUTIVES ]
+            <span className="badge badge-default">{teamUsers.length}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`workspace-nav-btn ${activeTab === 'work' ? 'workspace-nav-btn-active' : ''}`}
+            onClick={() => setActiveTab('work')}
+          >
+            [ 06 · WORK ASSIGNMENTS ]
+            <span className="badge badge-default">{workAssignments.length}</span>
           </button>
         </nav>
 
@@ -547,6 +704,157 @@ function DashboardContent() {
                   </div>
                 )}
 
+                {/* ── Section: Review Queue for Events Under Review (Requirement 2 & 3) ── */}
+                {inReviewEvents.length > 0 && (
+                  <section
+                    className="ops-review-queue-section"
+                    aria-label="Proposals under review"
+                    style={{
+                      background: 'var(--bg-surface)',
+                      border: '1px solid var(--border-subtle)',
+                      borderLeft: '4px solid var(--warning)',
+                      padding: '20px 24px',
+                      marginBottom: '24px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <p className="section-kicker" style={{ color: 'var(--warning-text)', margin: '0 0 4px 0' }}>
+                          EXECUTIVE PROPOSALS // AWAITING CORE DECISION
+                        </p>
+                        <h2 style={{ margin: 0, fontSize: '18px' }}>
+                          Proposals Under Review ({inReviewEvents.length})
+                        </h2>
+                      </div>
+                      <span className="badge badge-warning" style={{ fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px' }}>
+                        <Clock size={12} /> {inReviewEvents.length} PENDING DECISION
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                        gap: '14px'
+                      }}
+                    >
+                      {inReviewEvents.map((revEvent) => {
+                        const upvoteCount = revEvent.upvotes?.length || 0;
+                        const isVerified = upvoteCount >= 2;
+                        const isColliding = dashboard.detectedConflicts?.some(
+                          (c) => c.eventId === revEvent.id || c.conflictingEventId === revEvent.id
+                        );
+                        const matchingConflict = dashboard.detectedConflicts?.find(
+                          (c) => c.eventId === revEvent.id || c.conflictingEventId === revEvent.id
+                        );
+
+                        const hasUpvoted = Boolean(user?.id && revEvent.upvotes?.some((u) => u.userId === user.id));
+                        const isUpvotingThis = upvotingEventId === revEvent.id;
+
+                        return (
+                          <div
+                            key={revEvent.id}
+                            style={{
+                              background: 'var(--bg-subtle)',
+                              border: isColliding ? '1px solid var(--danger-border)' : '1px solid var(--border-subtle)',
+                              padding: '16px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '10px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <span className="badge badge-default">{revEvent.category}</span>
+                                <span className="badge badge-warning">IN REVIEW</span>
+                                {isVerified && (
+                                  <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '10px' }}>
+                                    <Sparkles size={10} /> PEER VERIFIED ({upvoteCount})
+                                  </span>
+                                )}
+                                {isColliding && (
+                                  <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '10px' }}>
+                                    <AlertTriangle size={10} /> CLASH
+                                  </span>
+                                )}
+                              </div>
+                              <span className="tnum" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                {formatDate(revEvent.startsAt)}
+                              </span>
+                            </div>
+
+                            <div>
+                              <strong style={{ fontSize: '14px', color: 'var(--text-primary)', display: 'block', lineHeight: 1.3 }}>
+                                {revEvent.title}
+                              </strong>
+                              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {revEvent.description}
+                              </p>
+                            </div>
+
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <CalendarClock size={12} />
+                                {formatTime(revEvent.startsAt)} - {formatTime(revEvent.endsAt)} · {revEvent.venue}
+                              </span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <UserCheck size={12} />
+                                Submitter: <strong>{revEvent.createdBy?.name || revEvent.organizer}</strong>
+                                {revEvent.createdBy?.email ? ` (${revEvent.createdBy.email})` : ''}
+                              </span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <ArrowBigUp size={12} style={{ color: upvoteCount > 0 ? 'var(--primary)' : 'inherit' }} />
+                                <strong>{upvoteCount}</strong> Executive Peer Endorsement{upvoteCount === 1 ? '' : 's'}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '6px', marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className={`button ${hasUpvoted ? 'button-secondary' : 'button-outline'} button-compact`}
+                                style={{ height: '26px', fontSize: '11px', padding: '0 8px', gap: '3px' }}
+                                disabled={isUpvotingThis}
+                                onClick={() => handleUpvoteEvent(revEvent)}
+                                title={hasUpvoted ? 'Remove your endorsement' : 'Endorse / peer-verify this proposal'}
+                              >
+                                <ArrowBigUp size={12} fill={hasUpvoted ? 'currentColor' : 'none'} />
+                                <span>{isUpvotingThis ? 'Updating…' : hasUpvoted ? `Endorsed (${upvoteCount})` : `Endorse (${upvoteCount})`}</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="button button-primary button-compact"
+                                style={{ height: '26px', fontSize: '11px', padding: '0 8px' }}
+                                onClick={() => handleQuickApprove(revEvent)}
+                                title="Approve immediately and publish to chapter calendar"
+                              >
+                                <CheckCircle2 size={12} /> Approve
+                              </button>
+                              <button
+                                type="button"
+                                className="button button-outline button-compact"
+                                style={{ height: '26px', fontSize: '11px', padding: '0 8px' }}
+                                onClick={() => handleOpenResolve(matchingConflict || revEvent)}
+                                title="Open full resolution console"
+                              >
+                                <ShieldCheck size={12} /> Resolve
+                              </button>
+                              <button
+                                type="button"
+                                className="button button-danger button-compact"
+                                style={{ height: '26px', fontSize: '11px', padding: '0 8px' }}
+                                onClick={() => handleQuickReject(revEvent)}
+                                title="Reject proposal"
+                              >
+                                <Trash2 size={12} /> Reject
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
                 {/* Structured Scheduled Agenda (Operations Register) */}
                 <section className="ops-agenda-section" aria-label="Chapter scheduled agenda">
                   <div className="ops-section-head">
@@ -606,8 +914,9 @@ function DashboardContent() {
                         <tr>
                           <th style={{ width: '90px' }}>Date</th>
                           <th style={{ width: '130px' }}>Timeslot</th>
-                          <th>Event Title & Organizer</th>
+                          <th>Event Title, Organizer & Submitter</th>
                           <th>Venue</th>
+                          <th style={{ width: '110px' }}>Endorsements</th>
                           <th style={{ width: '100px' }}>Status</th>
                           <th style={{ width: '120px', textAlign: 'right' }}>Actions</th>
                         </tr>
@@ -615,7 +924,7 @@ function DashboardContent() {
                       <tbody>
                         {filteredAgenda.length === 0 ? (
                           <tr>
-                            <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                            <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
                               No events found in this view. Use “Schedule Event” above to log a new date.
                             </td>
                           </tr>
@@ -627,6 +936,7 @@ function DashboardContent() {
                             const matchingConflict = dashboard.detectedConflicts?.find(
                               (c) => c.eventId === event.id || c.conflictingEventId === event.id
                             );
+                            const upvoteCount = event.upvotes?.length || 0;
 
                             return (
                               <tr key={event.id} className={isColliding ? 'ops-row-collision' : ''}>
@@ -643,6 +953,11 @@ function DashboardContent() {
                                     </strong>
                                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                       {event.category} · Hosted by {event.organizer}
+                                      {event.createdBy && (
+                                        <span style={{ display: 'block', color: 'var(--text-secondary)' }}>
+                                          Submitter: <strong>{event.createdBy.name}</strong> ({event.createdBy.role})
+                                        </span>
+                                      )}
                                       {event.resolutionNotes && (
                                         <span style={{ display: 'block', color: 'var(--primary)', fontStyle: 'italic', marginTop: '2px' }}>
                                           Note: {event.resolutionNotes}
@@ -656,6 +971,38 @@ function DashboardContent() {
                                     <MapPin size={12} style={{ color: 'var(--text-muted)' }} />
                                     {event.venue}
                                   </span>
+                                </td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="text-link"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      fontSize: '12px',
+                                      background: 'none',
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      padding: '2px 4px',
+                                      opacity: upvotingEventId === event.id ? 0.6 : 1
+                                    }}
+                                    disabled={upvotingEventId === event.id}
+                                    onClick={() => handleUpvoteEvent(event)}
+                                    title={user?.id && event.upvotes?.some((u) => u.userId === user.id) ? 'Remove your endorsement' : 'Click to endorse this proposal'}
+                                  >
+                                    <ArrowBigUp
+                                      size={13}
+                                      fill={user?.id && event.upvotes?.some((u) => u.userId === user.id) ? 'currentColor' : 'none'}
+                                      style={{ color: upvoteCount > 0 ? 'var(--primary)' : 'var(--text-muted)' }}
+                                    />
+                                    <strong>{upvoteCount}</strong>
+                                    {upvoteCount >= 2 && (
+                                      <span className="badge badge-success" style={{ fontSize: '9px', padding: '1px 4px' }}>
+                                        VERIFIED
+                                      </span>
+                                    )}
+                                  </button>
                                 </td>
                                 <td>
                                   {isColliding ? (
@@ -981,6 +1328,40 @@ function DashboardContent() {
           </section>
         )}
 
+        {/* ══════════════════════════════════════════════════════════
+            VIEW 5: TEAM & EXECUTIVES MANAGEMENT
+            ══════════════════════════════════════════════════════════ */}
+        {activeTab === 'team' && (
+          <TeamManagement
+            users={teamUsers}
+            currentUser={user}
+            token={token}
+            loading={teamLoading}
+            onRefresh={() => loadTeamAndWork()}
+            onAssignWork={(targetUser) => {
+              setPresetAssignee(targetUser);
+              setActiveTab('work');
+            }}
+          />
+        )}
+
+        {/* ══════════════════════════════════════════════════════════
+            VIEW 6: WORK ASSIGNMENTS
+            ══════════════════════════════════════════════════════════ */}
+        {activeTab === 'work' && (
+          <WorkAssignments
+            assignments={workAssignments}
+            executives={teamUsers.filter((u) => u.role === 'EXECUTIVE' && u.isActive)}
+            events={eventsList}
+            currentUser={user}
+            token={token}
+            loading={workLoading}
+            presetAssignee={presetAssignee}
+            onClearPresetAssignee={() => setPresetAssignee(null)}
+            onRefresh={() => loadTeamAndWork()}
+          />
+        )}
+
         {/* ── Operational Footnote ── */}
         <div className="dashboard-footer-links">
           <Link href="/#events" className="text-link">
@@ -1033,6 +1414,17 @@ function DashboardContent() {
         confirming={confirmModal.confirming}
         onClose={() => setConfirmModal((curr) => ({ ...curr, open: false }))}
         onConfirm={confirmModal.onConfirm}
+      />
+
+      <ChangePasswordModal
+        open={passwordModalOpen || Boolean(user?.mustChangePassword)}
+        isForced={Boolean(user?.mustChangePassword)}
+        token={token}
+        onClose={() => setPasswordModalOpen(false)}
+        onPasswordChanged={() => {
+          setPasswordModalOpen(false);
+          refreshAll();
+        }}
       />
     </main>
   );

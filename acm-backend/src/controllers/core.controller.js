@@ -2,6 +2,7 @@ import { prisma } from '../config/prisma.js';
 import { currentBudget } from '../services/budget.service.js';
 import { detectConflicts } from '../services/conflict.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
+import { publicEventSelect } from './event.controller.js';
 
 async function dashboardSummary() {
   const now = new Date();
@@ -69,8 +70,67 @@ async function recentActivity() {
 }
 
 export const getDashboard = asyncHandler(async (_req, res) => {
-  const [summary, conflicts, recent] = await Promise.all([dashboardSummary(), dashboardConflicts(), recentActivity()]);
-  res.json({ success: true, message: 'Core dashboard fetched successfully', data: { ...summary, detectedConflicts: conflicts, recentActivity: recent } });
+  const [summary, conflicts, recent, eventsUnderReview, teamMembers, workAssignments] = await Promise.all([
+    dashboardSummary(),
+    dashboardConflicts(),
+    recentActivity(),
+    prisma.event.findMany({
+      where: { status: 'DRAFT', archivedAt: null },
+      select: publicEventSelect,
+      orderBy: { createdAt: 'desc' }
+    }),
+    prisma.user.findMany({
+      where: { role: { in: ['EXECUTIVE', 'CORE', 'ADMIN'] } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        title: true,
+        department: true,
+        isActive: true,
+        mustChangePassword: true,
+        createdAt: true,
+        _count: {
+          select: {
+            createdEvents: true,
+            assignedWork: true
+          }
+        }
+      },
+      orderBy: [{ role: 'asc' }, { name: 'asc' }]
+    }),
+    prisma.workAssignment.findMany({
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        status: true,
+        priority: true,
+        dueDate: true,
+        assigneeId: true,
+        assignerId: true,
+        eventId: true,
+        createdAt: true,
+        assignee: { select: { id: true, name: true, email: true, title: true } },
+        assigner: { select: { id: true, name: true, email: true } },
+        event: { select: { id: true, title: true } }
+      },
+      orderBy: [{ status: 'asc' }, { dueDate: 'asc' }, { createdAt: 'desc' }]
+    })
+  ]);
+  res.json({
+    success: true,
+    message: 'Core dashboard fetched successfully',
+    data: {
+      ...summary,
+      detectedConflicts: conflicts,
+      recentActivity: recent,
+      eventsUnderReview,
+      teamMembers,
+      workAssignments
+    }
+  });
 });
 
 export const getDashboardSummary = asyncHandler(async (_req, res) => {

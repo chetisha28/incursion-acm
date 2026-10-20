@@ -1,4 +1,6 @@
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api').replace(/\/+$/, '');
+const rawApiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+const API_BASE = rawApiBase.replace(/^https:\/\/(localhost|127\.0\.0\.1)/, 'http://$1').replace(/\/+$/, '');
+
 
 export class ApiError extends Error {
   constructor(message, { status = 0, code = 'NETWORK_ERROR', details } = {}) {
@@ -70,11 +72,24 @@ export const api = {
   createEvent: (data, token, options) => apiRequest('/events', { method: 'POST', body: data, token, ...options }),
   updateEvent: (id, data, token, options) => apiRequest(`/events/${encodeURIComponent(id)}`, { method: 'PATCH', body: data, token, ...options }),
   resolveEvent: (id, data, token, options) => apiRequest(`/events/${encodeURIComponent(id)}/resolve`, { method: 'POST', body: data, token, ...options }),
+  upvoteEvent: (id, token, options) => apiRequest(`/events/${encodeURIComponent(id)}/upvote`, { method: 'POST', token, ...options }),
+  removeUpvote: (id, token, options) => apiRequest(`/events/${encodeURIComponent(id)}/upvote`, { method: 'DELETE', token, ...options }),
+  getEventUpvoteStatus: (id, token, options) => apiRequest(`/events/${encodeURIComponent(id)}/upvote`, { token, ...options }),
   archiveEvent: (id, token, options) => apiRequest(`/events/${encodeURIComponent(id)}`, { method: 'DELETE', token, ...options }),
   coreDashboard: (token, options) => apiRequest('/core/dashboard', { token, ...options }),
   coreDashboardSummary: (token, options) => apiRequest('/core/dashboard/summary', { token, ...options }),
   coreConflicts: (token, options) => apiRequest('/core/dashboard/conflicts', { token, ...options }),
   coreActivity: (token, options) => apiRequest('/core/dashboard/recent-activity', { token, ...options }),
+  listUsers: (params, token, options) => apiRequest(`/users${queryString(params)}`, { token, ...options }),
+  getUser: (id, token, options) => apiRequest(`/users/${encodeURIComponent(id)}`, { token, ...options }),
+  createUser: (data, token, options) => apiRequest('/users', { method: 'POST', body: data, token, ...options }),
+  updateUser: (id, data, token, options) => apiRequest(`/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: data, token, ...options }),
+  deleteUser: (id, token, options) => apiRequest(`/users/${encodeURIComponent(id)}`, { method: 'DELETE', token, ...options }),
+  listWorkAssignments: (params, token, options) => apiRequest(`/work-assignments${queryString(params)}`, { token, ...options }),
+  createWorkAssignment: (data, token, options) => apiRequest('/work-assignments', { method: 'POST', body: data, token, ...options }),
+  updateWorkAssignment: (id, data, token, options) => apiRequest(`/work-assignments/${encodeURIComponent(id)}`, { method: 'PATCH', body: data, token, ...options }),
+  deleteWorkAssignment: (id, token, options) => apiRequest(`/work-assignments/${encodeURIComponent(id)}`, { method: 'DELETE', token, ...options }),
+  changePassword: (data, token, options) => apiRequest('/auth/change-password', { method: 'POST', body: data, token, ...options }),
   listExpenses: (params, token, options) => apiRequest(`/expenses${queryString(params)}`, { token, ...options }),
   getExpense: (id, token, options) => apiRequest(`/expenses/${encodeURIComponent(id)}`, { token, ...options }),
   createExpense: (data, token, options) => apiRequest('/expenses', { method: 'POST', body: data, token, ...options }),

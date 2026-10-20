@@ -49,7 +49,7 @@ export function LoginPanel() {
   }, []);
 
   useEffect(() => {
-    if (!loading && user) router.replace(user.role === 'CORE' ? '/core/dashboard' : returnPath);
+    if (!loading && user) router.replace((user.role === 'CORE' || user.role === 'ADMIN') ? '/core/dashboard' : returnPath);
   }, [loading, user, returnPath, router]);
 
   const submit = async (event) => {
@@ -59,7 +59,7 @@ export function LoginPanel() {
     try {
       const signedIn = await login(kind, { email: email.trim(), password });
       toast(`Welcome back, ${signedIn.name}.`);
-      router.replace(signedIn.role === 'CORE' ? '/core/dashboard' : returnPath);
+      router.replace((signedIn.role === 'CORE' || signedIn.role === 'ADMIN') ? '/core/dashboard' : returnPath);
     } catch (loginError) {
       setError(
         loginError?.status === 401

@@ -1,4 +1,4 @@
-import { login as loginService, logout as logoutService } from '../services/auth.service.js';
+import { changePassword as changePasswordService, login as loginService, logout as logoutService } from '../services/auth.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 export const executiveLogin = asyncHandler(async (req, res) => {
@@ -18,4 +18,9 @@ export const logout = asyncHandler(async (req, res) => {
 
 export const me = asyncHandler(async (req, res) => {
   res.json({ success: true, message: 'Current user fetched successfully', data: req.user });
+});
+
+export const changePassword = asyncHandler(async (req, res) => {
+  const result = await changePasswordService(req.user.id, req.body);
+  res.json({ success: true, message: 'Password updated successfully', data: result });
 });
