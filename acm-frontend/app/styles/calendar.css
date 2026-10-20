@@ -1,0 +1,344 @@
+/* ==========================================================================
+   ACM GLASSY CALENDAR & SCHEDULING CONSOLE — SWISS EDITORIAL
+   ========================================================================== */
+
+.calendar-wrap {
+  position: relative;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 24px;
+}
+
+/* ─── Glassy Calendar Container ──────────────────────────────────────────── */
+.glassy-calendar {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(222, 217, 206, 0.95);
+  box-shadow: 0 4px 20px rgba(17, 18, 21, 0.04);
+}
+
+/* ─── Scheduling Operations Toolbar ─────────────────────────────────────── */
+.calendar-ops-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 16px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.calendar-ops-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.calendar-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.calendar-cat-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.calendar-cat-btn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 4px 8px;
+  border-radius: 0;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  transition: all 0.12s ease;
+}
+
+.calendar-cat-btn:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.calendar-cat-btn-active {
+  background: var(--text-primary);
+  color: #ffffff;
+  border-color: var(--text-primary);
+}
+
+.calendar-cat-btn-active:hover {
+  background: var(--text-primary);
+  color: #ffffff;
+}
+
+.calendar-loading {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  font-family: var(--font-mono);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-surface);
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  z-index: 10;
+}
+
+/* ─── FullCalendar Core Theme Overrides ──────────────────────────────────── */
+.fc {
+  --fc-border-color: #ded9ce;
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: #f1efe8;
+  --fc-neutral-text-color: #626774;
+  --fc-list-event-hover-bg-color: #f1efe8;
+  --fc-today-bg-color: rgba(0, 71, 186, 0.03);
+  --fc-now-indicator-color: #0047ba;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+.fc .fc-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px !important;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.fc .fc-toolbar-title {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+/* ─── Calendar Navigation & View Buttons ─────────────────────────────────── */
+.fc .fc-button-group {
+  box-shadow: none;
+  border-radius: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+}
+
+.fc .fc-button {
+  min-height: 30px;
+  border: none !important;
+  border-right: 1px solid var(--border-subtle) !important;
+  border-radius: 0 !important;
+  padding: 6px 12px !important;
+  background: var(--bg-surface) !important;
+  color: var(--text-secondary) !important;
+  box-shadow: none !important;
+  font-family: var(--font-mono) !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.06em !important;
+  transition: all 0.12s ease !important;
+}
+
+.fc .fc-button:last-child {
+  border-right: none !important;
+}
+
+.fc .fc-button:hover {
+  background: var(--bg-subtle) !important;
+  color: var(--text-primary) !important;
+}
+
+.fc .fc-button-primary:not(:disabled).fc-button-active,
+.fc .fc-button-primary:not(:disabled):active {
+  border-color: transparent !important;
+  background: var(--text-primary) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+.fc .fc-button:focus {
+  outline: 2px solid var(--border-focus) !important;
+  outline-offset: 1px !important;
+}
+
+/* ─── Day Headers ────────────────────────────────────────────────────────── */
+.fc .fc-col-header-cell {
+  background: var(--bg-subtle);
+  border-color: var(--border-subtle);
+}
+
+.fc .fc-col-header-cell-cushion {
+  padding: 8px 4px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ─── Day Grid & Cells ───────────────────────────────────────────────────── */
+.fc .fc-daygrid-day {
+  transition: background-color 0.1s ease;
+}
+
+.fc .fc-daygrid-day-number {
+  padding: 6px 8px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fc .fc-day-other .fc-daygrid-day-number {
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  color: var(--primary);
+  font-weight: 800;
+}
+
+/* ─── Event Items on Calendar ────────────────────────────────────────────── */
+.fc .fc-daygrid-event {
+  border-radius: 0;
+  padding: 3px 6px;
+  margin: 2px 3px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(17, 18, 21, 0.03);
+  transition: all 0.12s ease;
+  cursor: pointer;
+}
+
+.fc .fc-daygrid-event:hover {
+  background: var(--bg-subtle);
+  border-color: var(--border-strong);
+}
+
+/* Category Accent Borders */
+.cal-cat-workshop {
+  border-left: 3px solid var(--primary) !important;
+}
+
+.cal-cat-hackathon {
+  border-left: 3px solid var(--warning) !important;
+}
+
+.cal-cat-tech-talk {
+  border-left: 3px solid var(--text-primary) !important;
+}
+
+.cal-cat-general {
+  border-left: 3px solid var(--text-muted) !important;
+}
+
+/* Conflict Detected State */
+.calendar-event-conflict {
+  background: #fdf5f5 !important;
+  border-color: var(--danger-border) !important;
+  border-left: 3px solid var(--danger) !important;
+  color: var(--danger-text) !important;
+  font-weight: 700 !important;
+}
+
+.fc .fc-event-time {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 4px;
+  font-size: 10px;
+}
+
+.calendar-event-conflict .fc-event-time {
+  color: var(--danger-text);
+}
+
+.fc .fc-event-title {
+  font-weight: 600;
+}
+
+/* ─── Legend Bar ─────────────────────────────────────────────────────────── */
+.calendar-legend-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-top: 14px;
+  margin-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.04em;
+}
+
+.legend-chip i {
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+}
+
+.legend-chip-workshop i {
+  background: var(--primary);
+}
+
+.legend-chip-hackathon i {
+  background: var(--warning);
+}
+
+.legend-chip-techtalk i {
+  background: var(--text-primary);
+}
+
+.legend-chip-conflict i {
+  background: var(--danger);
+}
+
+/* ─── Agenda List View ───────────────────────────────────────────────────── */
+.fc .fc-list-table {
+  border: 1px solid var(--border-subtle);
+}
+
+.fc .fc-list-day-cushion {
+  background: var(--bg-subtle) !important;
+  padding: 8px 14px !important;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.fc .fc-list-event:hover td {
+  background: var(--bg-surface-hover) !important;
+}
+
+.fc .fc-list-event-dot {
+  border-color: var(--primary) !important;
+}

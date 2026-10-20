@@ -1,0 +1,40 @@
+{
+  "name": "acm-conflict-aware-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API backend for ACM Conflict-Aware Events and Expenses Manager",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node --watch-path=src src/server.js",
+    "start": "node src/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "db:seed": "node prisma/seed.js",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand tests/api.test.js --forceExit",
+    "test:e2e": "node --test tests/e2e-workflow.test.js",
+    "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.7",
+    "express": "^4.22.3",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "prisma": "^6.19.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "jest": "^30.5.2",
+    "supertest": "^7.3.1"
+  }
+}
