@@ -177,7 +177,7 @@ The interface follows a **Swiss Precision & Technical Editorial** design system:
   - Safety & Alerts: Emerald Green (`--success`), Amber Amber-Orange (`--warning`), and Vivid Crimson (`--danger`).
 - **Zero Third-Party CSS Frameworks**: Built entirely with Vanilla CSS (`app/globals.css`) for ultimate control over layout reflows, micro-interactions, and hardware-accelerated animations.
 
-### Screenshots & Visual Preview Guide
+### Visual Preview Guide
 
 Below is a breakdown of the visual components available within the running application:
 
@@ -210,20 +210,7 @@ Below is a breakdown of the visual components available within the running appli
 └────────────────────────────┴───────────────────────────────────────────┘
 ```
 
-### Instructions for Capturing Interface Screenshots
 
-To capture verified, publication-grade screenshots for documentation or release notes:
-
-1. Launch both the backend API and frontend client locally as detailed in the [Local Setup Guide](#local-setup--installation-guide).
-2. Seed the development database with demo data (`SEED_DEMO=true npm run db:seed`).
-3. Open a Chromium browser in full HD resolution (`1920x1080`) at `http://localhost:3000`.
-4. Capture the following verified perspectives:
-   - **`docs/screenshots/01_public_portal.png`**: The landing hero and upcoming events grid.
-   - **`docs/screenshots/02_login_portal.png`**: The dual-tab sign-in console.
-   - **`docs/screenshots/03_core_overview.png`**: The Operations Desk showing operational ticker ribbons and the collision radar.
-   - **`docs/screenshots/04_conflict_center.png`**: The Conflict Decision Center with side-by-side venue clash comparisons.
-   - **`docs/screenshots/05_financial_ledger.png`**: The semester ledger and category expenditure bars.
-   - **`docs/screenshots/06_team_work_matrix.png`**: The chapter user directory and work delegation table.
 
 ---
 
